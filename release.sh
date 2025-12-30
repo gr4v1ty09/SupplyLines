@@ -165,14 +165,20 @@ fi
 
 sed -i "s/supplylines_version=.*/supplylines_version=${NEW_VERSION}/" gradle.properties
 
+# Commit version bump first so build isn't dirty
+git add gradle.properties
+git commit -m "Release ${NEW_VERSION}"
+
 echo -e "${YELLOW}Building...${NC}"
-./gradlew clean build --no-daemon -q
+if ! ./gradlew clean build --no-daemon -q; then
+    echo -e "${RED}Build failed! Rolling back commit...${NC}"
+    git reset --hard HEAD~1
+    exit 1
+fi
 
 echo -e "${GREEN}Build successful!${NC}"
 ./gradlew versionInfo --no-daemon -q
 
-git add gradle.properties
-git commit -m "Release ${NEW_VERSION}"
 git tag -a "$TAG" -m "SupplyLines ${TAG}"
 
 echo -e "${YELLOW}Pushing to origin...${NC}"

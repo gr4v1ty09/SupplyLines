@@ -1,0 +1,12 @@
+{
+  "screen.supplylines.stock_keeper_hut.title": "Stock Keeper Hut",
+  "screen.supplylines.stock_keeper_hut.body": "Placeholder UI — link racks/postbox here later.",
+  "screen.supplylines.stock_keeper.scan": "Scan Area",
+  "screen.supplylines.stock_keeper.link_postbox": "Link Postbox",
+  "screen.supplylines.stock_keeper.test_move": "Test Move (Hand ×32)",
+  "job.supplylines.stock_keeper.name": "Stock Keeper",
+  "block.supplylines.stock_keeper_hut": "Stock Keeper Hut",
+  "com.supplylines.building.stock_keeper_hut": "Stock Keeper Hut",
+  "com.supplylines.building.stock_keeper_hut.desc": "Manages item transport between colony storage and Create networks",
+  "com.supplylines.job.stock_keeper": "Stock Keeper"
+}

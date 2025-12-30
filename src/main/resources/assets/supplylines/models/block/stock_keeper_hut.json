@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "supplylines:block/stock_keeper_hut_128"
+  }
+}

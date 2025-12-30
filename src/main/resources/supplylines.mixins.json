@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.gr4v1ty.supplylines.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "supplylines.refmap.json",
+  "plugin": "com.gr4v1ty.supplylines.mixin.SupplyLinesMixinPlugin",
+  "mixins": [
+    "AbstractBuildingMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

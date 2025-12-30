@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [master]
+    branches: [main, develop]
     tags: ['v*']
   pull_request:
 
@@ -55,6 +55,12 @@ jobs:
         env:
           CI_RELEASE: 'true'
         run: ./gradlew clean build --no-daemon
+
+      - name: Display version info
+        run: ./gradlew versionInfo --no-daemon
+
+      - name: List build artifacts
+        run: ls -la build/libs/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

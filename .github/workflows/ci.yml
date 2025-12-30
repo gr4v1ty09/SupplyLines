@@ -2,6 +2,8 @@ name: build
 
 on:
   push:
+    branches: [master]
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -9,10 +11,54 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for git-based versioning
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+
       - name: Build
+        env:
+          CI_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') && 'true' || 'false' }}
         run: ./gradlew build --no-daemon
+
+      - name: Display version info
+        run: ./gradlew versionInfo --no-daemon
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: supplylines
+          path: build/libs/*.jar
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build Release
+        env:
+          CI_RELEASE: 'true'
+        run: ./gradlew clean build --no-daemon
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/libs/supplylines-*.jar
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}

@@ -11,6 +11,7 @@ out/
 .project
 .settings/
 .vscode/
+.spotless/
 
 # OS
 .DS_Store
@@ -21,7 +22,8 @@ Thumbs.db
 
 # Runtime artifacts
 run/
+run-server/
+libs/
 
 # Built JARs (keep libs/ for manual dependencies)
 *.jar
-!libs/*.jar

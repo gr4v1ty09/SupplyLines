@@ -4,9 +4,67 @@ plugins {
     id("com.diffplug.spotless") version "6.25.0"
 }
 
+// =============================================================================
+// Version Computation (Semantic Versioning with Git metadata for dev builds)
+// =============================================================================
+
 val mcVersion: String by project.extra { providers.gradleProperty("minecraft_version").get() }
 val forgeVersion: String by project.extra { providers.gradleProperty("forge_version").get() }
-val modVersion: String by project.extra { providers.gradleProperty("supplylines_version").get() }
+val baseVersion: String by project.extra { providers.gradleProperty("supplylines_version").get() }
+
+/**
+ * Runs a shell command and returns the trimmed output, or null on failure.
+ */
+fun runCommand(command: String): String? {
+    return try {
+        val process = ProcessBuilder("sh", "-c", command)
+            .directory(projectDir)
+            .redirectErrorStream(false)
+            .start()
+        val result = process.inputStream.bufferedReader().readText().trim()
+        if (process.waitFor() == 0 && result.isNotEmpty()) result else null
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/**
+ * Gets the short git commit hash (7 characters).
+ */
+fun getGitCommitShort(): String = runCommand("git rev-parse --short=7 HEAD") ?: "unknown"
+
+/**
+ * Checks if the working directory has uncommitted changes.
+ */
+fun isGitDirty(): Boolean = !runCommand("git status --porcelain").isNullOrBlank()
+
+/**
+ * Determines if this is a release build.
+ * Release builds occur when:
+ * 1. The CI_RELEASE environment variable is set to "true", OR
+ * 2. Building from a git tag that matches the version (v{baseVersion})
+ */
+fun isReleaseBuild(): Boolean {
+    if (System.getenv("CI_RELEASE") == "true") return true
+    val tagAtHead = runCommand("git describe --tags --exact-match HEAD 2>/dev/null")
+    return tagAtHead?.removePrefix("v") == baseVersion
+}
+
+/**
+ * Computes the full version string.
+ * - Release builds: baseVersion (e.g., "1.0.0-alpha.1")
+ * - Dev builds: baseVersion+commitHash (e.g., "1.0.0-alpha.1+abc1234")
+ * - Dirty dev builds: baseVersion+commitHash.dirty
+ */
+val modVersion: String by project.extra {
+    if (isReleaseBuild()) {
+        baseVersion
+    } else {
+        val commit = getGitCommitShort()
+        val dirty = if (isGitDirty()) ".dirty" else ""
+        "$baseVersion+$commit$dirty"
+    }
+}
 
 group = "com.gr4v1ty"
 version = modVersion
@@ -130,11 +188,27 @@ tasks.jar {
             "Implementation-Title" to project.name,
             "Implementation-Version" to modVersion,
             "Implementation-Vendor" to "gr4v1ty",
-            "MixinConfigs" to "supplylines.mixins.json"
+            "MixinConfigs" to "supplylines.mixins.json",
+            "SupplyLines-Base-Version" to baseVersion,
+            "SupplyLines-Git-Commit" to getGitCommitShort(),
+            "SupplyLines-Build-Type" to if (isReleaseBuild()) "release" else "development"
         )
     }
 
     finalizedBy("reobfJar")
+}
+
+tasks.register("versionInfo") {
+    group = "help"
+    description = "Displays version information for the build"
+    doLast {
+        println("=== SupplyLines Version Info ===")
+        println("Base Version:     $baseVersion")
+        println("Computed Version: $modVersion")
+        println("Is Release Build: ${isReleaseBuild()}")
+        println("Git Commit:       ${getGitCommitShort()}")
+        println("Git Dirty:        ${isGitDirty()}")
+    }
 }
 
 spotless {

@@ -6,6 +6,7 @@ import com.gr4v1ty.supplylines.registry.ModBuildings;
 import com.gr4v1ty.supplylines.registry.ModItems;
 import com.gr4v1ty.supplylines.registry.ModJobs;
 import com.gr4v1ty.supplylines.rs.SupplyLinesRequestSystem;
+import com.gr4v1ty.supplylines.util.ModVersion;
 import com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler;
 import com.ldtteam.structurize.placement.handlers.placement.PlacementHandlers;
 import com.minecolonies.api.sounds.ModSoundEvents;
@@ -36,7 +37,11 @@ public final class SupplyLines {
         ModItems.ITEMS.register(modBus);
         ModJobs.JOBS.register(modBus);
         ModBuildings.BUILDINGS.register(modBus);
-        FMLJavaModLoadingContext.get().getModEventBus().addListener((FMLCommonSetupEvent e) -> {
+        modBus.addListener((FMLCommonSetupEvent e) -> {
+            LOGGER.info("[{}] Version {} loaded", MOD_ID, ModVersion.get().getDisplayVersion());
+            if (ModVersion.get().isDevBuild()) {
+                LOGGER.warn("[{}] This is a development build - not for production use", MOD_ID);
+            }
             try {
                 SupplyLinesRequestSystem.registerFactories();
             } catch (Exception ex) {

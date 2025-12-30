@@ -177,8 +177,8 @@ git tag -a "$TAG" -m "SupplyLines ${TAG}"
 
 echo -e "${YELLOW}Pushing to origin...${NC}"
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
-git push origin "$BRANCH"
-git push origin "$TAG"
+GIT_SSH_COMMAND="ssh" git push origin "$BRANCH"
+GIT_SSH_COMMAND="ssh" git push origin "$TAG"
 
 echo ""
 echo -e "${GREEN}Release ${NEW_VERSION} pushed successfully!${NC}"

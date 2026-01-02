@@ -22,6 +22,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
@@ -38,13 +39,13 @@ public final class NetworkIntegration {
     private static final String DELIVERY_FROGPORT_NAME = "SK_Deliveries";
     private static final long STAGING_TIMEOUT_TICKS = 1200L;
     private static final long BUFFER_WINDOW_TICKS = 60L;
-    private final Map<IToken<?>, StagingRequest> pendingStagingRequests = new HashMap();
+    private final Map<IToken<?>, StagingRequest> pendingStagingRequests = new HashMap<>();
     private final Map<ItemMatch.ItemStackKey, Long> stockLevels = new HashMap<ItemMatch.ItemStackKey, Long>();
     private final Map<ItemMatch.ItemStackKey, Long> previousStockLevels = new HashMap<ItemMatch.ItemStackKey, Long>();
     private final Map<ItemMatch.ItemStackKey, Long> stockGauges = new HashMap<ItemMatch.ItemStackKey, Long>();
     private long lastStockSnapshotTick = Long.MIN_VALUE;
     private long lastStagingProcessTick = Long.MIN_VALUE;
-    private final Map<IToken<?>, StagingRequest> bufferedRequests = new HashMap();
+    private final Map<IToken<?>, StagingRequest> bufferedRequests = new HashMap<>();
     private long lastBufferFlushTick = Long.MIN_VALUE;
     private final IColony colony;
 
@@ -209,7 +210,7 @@ public final class NetworkIntegration {
                 continue;
             }
             long elapsed = level.getGameTime() - staging.requestedAtTick;
-            if (elapsed <= 1200L)
+            if (elapsed <= STAGING_TIMEOUT_TICKS)
                 continue;
             staging.state = StagingRequest.State.CANCELLED;
             it.remove();
@@ -224,7 +225,7 @@ public final class NetworkIntegration {
         if (now <= 0L) {
             return;
         }
-        if (this.lastBufferFlushTick != Long.MIN_VALUE && now - this.lastBufferFlushTick < 60L) {
+        if (this.lastBufferFlushTick != Long.MIN_VALUE && now - this.lastBufferFlushTick < BUFFER_WINDOW_TICKS) {
             return;
         }
         this.lastBufferFlushTick = now;
@@ -295,14 +296,7 @@ public final class NetworkIntegration {
         if (available < (long) quantity) {
             return false;
         }
-        StagingRequest staging = new StagingRequest();
-        staging.item = item.copy();
-        staging.quantity = quantity;
-        staging.requestedAtTick = level.getGameTime();
-        staging.broadcasted = false;
-        staging.state = StagingRequest.State.QUEUED;
-        staging.parentRequestId = requestId;
-        this.bufferedRequests.put(requestId, staging);
+        this.bufferedRequests.put(requestId, StagingRequest.create(item, quantity, level.getGameTime(), requestId));
         return true;
     }
 
@@ -327,205 +321,102 @@ public final class NetworkIntegration {
             return false;
         }
         for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : this.stockLevels.entrySet()) {
-            ItemStack stack;
             ItemMatch.ItemStackKey key = entry.getKey();
             long quantity = entry.getValue();
-            if (quantity <= 0L || (stack = key.toStack()).isDamaged() || !toolRequest.matches(stack))
+            if (quantity <= 0L)
                 continue;
-            StagingRequest staging = new StagingRequest();
-            staging.item = stack.copy();
-            staging.quantity = 1;
-            staging.requestedAtTick = level.getGameTime();
-            staging.broadcasted = false;
-            staging.state = StagingRequest.State.QUEUED;
-            staging.parentRequestId = requestId;
-            this.bufferedRequests.put(requestId, staging);
+            ItemStack stack = key.toStack();
+            if (stack.isDamaged() || !toolRequest.matches(stack))
+                continue;
+            this.bufferedRequests.put(requestId, StagingRequest.create(stack, 1, level.getGameTime(), requestId));
             return true;
         }
         return false;
     }
 
     public long getStockLevelForTag(TagKey<Item> tag) {
+        return getStockLevelMatching(stack -> stack.is(tag));
+    }
+
+    public boolean requestFromStockNetworkByTag(TagKey<Item> tag, int quantity, IToken<?> requestId, Level level) {
+        return requestFromStockNetworkGeneric(stack -> stack.is(tag), quantity, requestId, level, "Tag");
+    }
+
+    public long getStockLevelForStackList(StackList stackList) {
+        return getStockLevelMatching(stackList::matches);
+    }
+
+    public boolean requestFromStockNetworkByStackList(StackList stackList, IToken<?> requestId, Level level) {
+        return requestFromStockNetworkGeneric(stackList::matches, stackList.getCount(), requestId, level, "StackList");
+    }
+
+    public long getStockLevelForFood(Food food) {
+        return getStockLevelMatching(food::matches);
+    }
+
+    public boolean requestFromStockNetworkForFood(Food food, IToken<?> requestId, Level level) {
+        return requestFromStockNetworkGeneric(food::matches, food.getCount(), requestId, level, "Food");
+    }
+
+    public long getStockLevel(ItemStack item) {
+        return this.stockLevels.getOrDefault(new ItemMatch.ItemStackKey(item), 0L);
+    }
+
+    private long getStockLevelMatching(Predicate<ItemStack> matcher) {
         if (this.stockLevels.isEmpty()) {
             return 0L;
         }
         long total = 0L;
         for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : this.stockLevels.entrySet()) {
-            ItemStack stack;
             ItemMatch.ItemStackKey key = entry.getKey();
             long quantity = entry.getValue();
-            if (quantity <= 0L || !(stack = key.toStack()).is(tag))
+            if (quantity <= 0L)
                 continue;
-            total += quantity;
+            ItemStack stack = key.toStack();
+            if (matcher.test(stack)) {
+                total += quantity;
+            }
         }
         return total;
     }
 
-    public boolean requestFromStockNetworkByTag(TagKey<Item> tag, int quantity, IToken<?> requestId, Level level) {
+    private boolean requestFromStockNetworkGeneric(Predicate<ItemStack> matcher, int quantity, IToken<?> requestId,
+            Level level, String logLabel) {
         if (this.stockLevels.isEmpty()) {
             LOGGER.warn("{} Cannot request from stock network - no stock data available", LogTags.ORDERING);
             return false;
         }
         int remaining = quantity;
-        ArrayList<StagingRequest> stagingRequests = new ArrayList<StagingRequest>();
+        List<StagingRequest> stagingRequests = new ArrayList<>();
         for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : this.stockLevels.entrySet()) {
-            long reserveThreshold;
-            long availableAfterReserve;
-            ItemStack stack;
             if (remaining <= 0)
                 break;
             ItemMatch.ItemStackKey key = entry.getKey();
             long available = entry.getValue();
-            if (available <= 0L || !(stack = key.toStack()).is(tag) || (availableAfterReserve = available
-                    - (reserveThreshold = this.stockGauges.getOrDefault(key, 0L).longValue())) <= 0L)
+            if (available <= 0L)
                 continue;
-            int toTake = (int) Math.min((long) remaining, Math.min(availableAfterReserve, Integer.MAX_VALUE));
-            StagingRequest staging = new StagingRequest();
-            staging.item = stack.copy();
-            staging.quantity = toTake;
-            staging.requestedAtTick = level.getGameTime();
-            staging.broadcasted = false;
-            staging.state = StagingRequest.State.QUEUED;
-            staging.parentRequestId = requestId;
-            stagingRequests.add(staging);
+            ItemStack stack = key.toStack();
+            if (!matcher.test(stack))
+                continue;
+            long reserveThreshold = this.stockGauges.getOrDefault(key, 0L);
+            long availableAfterReserve = available - reserveThreshold;
+            if (availableAfterReserve <= 0L)
+                continue;
+            int toTake = (int) Math.min(remaining, Math.min(availableAfterReserve, Integer.MAX_VALUE));
+            stagingRequests.add(StagingRequest.create(stack, toTake, level.getGameTime(), requestId));
             remaining -= toTake;
         }
         if (remaining > 0) {
             return false;
         }
-        LOGGER.debug("{} Tag request {} creating {} sub-requests", LogTags.ORDERING, requestId, stagingRequests.size());
-        for (StagingRequest staging : stagingRequests) {
-            LOGGER.debug("{} Tag request {} buffering sub-request for {} x{}", LogTags.ORDERING, requestId,
-                    staging.item.getDisplayName().getString(), staging.quantity);
-            this.bufferedRequests.put(requestId, staging);
-        }
-        return true;
-    }
-
-    public long getStockLevelForStackList(StackList stackList) {
-        if (this.stockLevels.isEmpty()) {
-            LOGGER.warn("{} stockLevels is EMPTY - stock snapshot not taken yet or stock ticker has no data!",
-                    LogTags.INVENTORY);
-            return 0L;
-        }
-        long total = 0L;
-        for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : this.stockLevels.entrySet()) {
-            ItemStack stack;
-            ItemMatch.ItemStackKey key = entry.getKey();
-            long quantity = entry.getValue();
-            if (quantity <= 0L || !stackList.matches(stack = key.toStack()))
-                continue;
-            total += quantity;
-        }
-        return total;
-    }
-
-    public boolean requestFromStockNetworkByStackList(StackList stackList, IToken<?> requestId, Level level) {
-        int quantity;
-        if (this.stockLevels.isEmpty()) {
-            LOGGER.warn("{} Cannot request from stock network - no stock data available", LogTags.ORDERING);
-            return false;
-        }
-        int remaining = quantity = stackList.getCount();
-        ArrayList<StagingRequest> stagingRequests = new ArrayList<StagingRequest>();
-        for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : this.stockLevels.entrySet()) {
-            long reserveThreshold;
-            long availableAfterReserve;
-            ItemStack stack;
-            if (remaining <= 0)
-                break;
-            ItemMatch.ItemStackKey key = entry.getKey();
-            long available = entry.getValue();
-            if (available <= 0L || !stackList.matches(stack = key.toStack()) || (availableAfterReserve = available
-                    - (reserveThreshold = this.stockGauges.getOrDefault(key, 0L).longValue())) <= 0L)
-                continue;
-            int toTake = (int) Math.min((long) remaining, Math.min(availableAfterReserve, Integer.MAX_VALUE));
-            StagingRequest staging = new StagingRequest();
-            staging.item = stack.copy();
-            staging.quantity = toTake;
-            staging.requestedAtTick = level.getGameTime();
-            staging.broadcasted = false;
-            staging.state = StagingRequest.State.QUEUED;
-            staging.parentRequestId = requestId;
-            stagingRequests.add(staging);
-            remaining -= toTake;
-        }
-        if (remaining > 0) {
-            return false;
-        }
-        LOGGER.debug("{} StackList request {} creating {} sub-requests", LogTags.ORDERING, requestId,
+        LOGGER.debug("{} {} request {} creating {} sub-requests", LogTags.ORDERING, logLabel, requestId,
                 stagingRequests.size());
         for (StagingRequest staging : stagingRequests) {
-            LOGGER.debug("{} StackList request {} buffering sub-request for {} x{}", LogTags.ORDERING, requestId,
+            LOGGER.debug("{} {} request {} buffering sub-request for {} x{}", LogTags.ORDERING, logLabel, requestId,
                     staging.item.getDisplayName().getString(), staging.quantity);
             this.bufferedRequests.put(requestId, staging);
         }
         return true;
-    }
-
-    public long getStockLevelForFood(Food food) {
-        if (this.stockLevels.isEmpty()) {
-            LOGGER.warn("{} stockLevels is EMPTY - stock snapshot not taken yet or stock ticker has no data!",
-                    LogTags.INVENTORY);
-            return 0L;
-        }
-        long total = 0L;
-        for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : this.stockLevels.entrySet()) {
-            ItemStack stack;
-            ItemMatch.ItemStackKey key = entry.getKey();
-            long quantity = entry.getValue();
-            if (quantity <= 0L || !food.matches(stack = key.toStack()))
-                continue;
-            total += quantity;
-        }
-        return total;
-    }
-
-    public boolean requestFromStockNetworkForFood(Food food, IToken<?> requestId, Level level) {
-        int quantity;
-        if (this.stockLevels.isEmpty()) {
-            LOGGER.warn("{} Cannot request from stock network - no stock data available", LogTags.ORDERING);
-            return false;
-        }
-        int remaining = quantity = food.getCount();
-        ArrayList<StagingRequest> stagingRequests = new ArrayList<StagingRequest>();
-        for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : this.stockLevels.entrySet()) {
-            long reserveThreshold;
-            long availableAfterReserve;
-            ItemStack stack;
-            if (remaining <= 0)
-                break;
-            ItemMatch.ItemStackKey key = entry.getKey();
-            long available = entry.getValue();
-            if (available <= 0L || !food.matches(stack = key.toStack()) || (availableAfterReserve = available
-                    - (reserveThreshold = this.stockGauges.getOrDefault(key, 0L).longValue())) <= 0L)
-                continue;
-            int toTake = (int) Math.min((long) remaining, Math.min(availableAfterReserve, Integer.MAX_VALUE));
-            StagingRequest staging = new StagingRequest();
-            staging.item = stack.copy();
-            staging.quantity = toTake;
-            staging.requestedAtTick = level.getGameTime();
-            staging.broadcasted = false;
-            staging.state = StagingRequest.State.QUEUED;
-            staging.parentRequestId = requestId;
-            stagingRequests.add(staging);
-            remaining -= toTake;
-        }
-        if (remaining > 0) {
-            return false;
-        }
-        LOGGER.debug("{} Food request {} creating {} sub-requests", LogTags.ORDERING, requestId,
-                stagingRequests.size());
-        for (StagingRequest staging : stagingRequests) {
-            LOGGER.debug("{} Food request {} buffering sub-request for {} x{}", LogTags.ORDERING, requestId,
-                    staging.item.getDisplayName().getString(), staging.quantity);
-            this.bufferedRequests.put(requestId, staging);
-        }
-        return true;
-    }
-
-    public long getStockLevel(ItemStack item) {
-        return this.stockLevels.getOrDefault(new ItemMatch.ItemStackKey(item), 0L);
     }
 
     public Map<ItemMatch.ItemStackKey, Long> getStockGauges() {

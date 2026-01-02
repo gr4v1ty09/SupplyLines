@@ -178,7 +178,8 @@ tasks.processResources {
 }
 
 tasks.jar {
-    archiveBaseName.set("supplylines")
+    // JAR naming: supplylines-mc1.20.1-1.0.0-alpha.5.jar
+    archiveBaseName.set("supplylines-mc$mcVersion")
 
     manifest {
         attributes(
@@ -190,6 +191,7 @@ tasks.jar {
             "Implementation-Vendor" to "gr4v1ty",
             "MixinConfigs" to "supplylines.mixins.json",
             "SupplyLines-Base-Version" to baseVersion,
+            "SupplyLines-MC-Version" to mcVersion,
             "SupplyLines-Git-Commit" to getGitCommitShort(),
             "SupplyLines-Build-Type" to if (isReleaseBuild()) "release" else "development"
         )
@@ -203,11 +205,13 @@ tasks.register("versionInfo") {
     description = "Displays version information for the build"
     doLast {
         println("=== SupplyLines Version Info ===")
+        println("MC Version:       $mcVersion")
         println("Base Version:     $baseVersion")
         println("Computed Version: $modVersion")
         println("Is Release Build: ${isReleaseBuild()}")
         println("Git Commit:       ${getGitCommitShort()}")
         println("Git Dirty:        ${isGitDirty()}")
+        println("JAR Name:         supplylines-mc$mcVersion-$modVersion.jar")
     }
 }
 

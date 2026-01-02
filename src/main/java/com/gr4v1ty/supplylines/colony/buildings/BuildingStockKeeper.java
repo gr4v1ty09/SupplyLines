@@ -19,6 +19,7 @@ import com.minecolonies.api.entity.citizen.Skill;
 import com.minecolonies.api.entity.citizen.citizenhandlers.ICitizenSkillHandler;
 import com.minecolonies.core.colony.buildings.AbstractBuilding;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
+import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -40,9 +41,19 @@ import org.slf4j.LoggerFactory;
 
 public class BuildingStockKeeper extends AbstractBuilding {
     private static final Logger LOGGER = LoggerFactory.getLogger(BuildingStockKeeper.class);
+    private static final Random RANDOM = new Random();
 
     /** Building level required for stock ticker functionality */
     public static final int STOCK_TICKER_REQUIRED_LEVEL = 4;
+
+    /** Default interval for inventory signature refresh checks */
+    private static final int DEFAULT_INV_SIG_INTERVAL_TICKS = 40;
+    /** Default interval for staging process when no skill manager */
+    private static final int DEFAULT_STAGING_PROCESS_INTERVAL_TICKS = 60;
+    /** Default interval for rack rescan when no skill manager */
+    private static final int DEFAULT_RESCAN_INTERVAL_TICKS = 400;
+    /** Default interval for stock snapshot updates when no skill manager */
+    private static final int DEFAULT_STOCK_SNAPSHOT_INTERVAL_TICKS = 200;
 
     private final RackManager rackManager;
     private final NetworkIntegration networkIntegration;
@@ -50,7 +61,6 @@ public class BuildingStockKeeper extends AbstractBuilding {
     private final RequestHandler requestHandler;
     private long lastInvSigTick = Long.MIN_VALUE;
     private long lastInvSig = Long.MIN_VALUE;
-    private final int invSigIntervalTicks = 40;
 
     public Map<ItemMatch.ItemStackKey, Long> getStockGauges() {
         return this.networkIntegration.getStockGauges();
@@ -91,14 +101,12 @@ public class BuildingStockKeeper extends AbstractBuilding {
 
     @Nullable
     public BlockPos getSeatPos() {
-        BlockPos result = this.rackManager.getSeatPos();
-        return result;
+        return this.rackManager.getSeatPos();
     }
 
     @Nullable
     public BlockPos getStockTickerPos() {
-        BlockPos result = this.rackManager.getStockTickerPos();
-        return result;
+        return this.rackManager.getStockTickerPos();
     }
 
     @Nullable
@@ -153,7 +161,9 @@ public class BuildingStockKeeper extends AbstractBuilding {
 
     private void processStagingRequestsIfDue(Level level) {
         this.ensureSkillManagerInitialized();
-        int interval = this.skillManager != null ? this.skillManager.getStagingProcessIntervalTicks() : 60;
+        int interval = this.skillManager != null
+                ? this.skillManager.getStagingProcessIntervalTicks()
+                : DEFAULT_STAGING_PROCESS_INTERVAL_TICKS;
         this.networkIntegration.processStagingRequestsIfDue(level, this.rackManager.getStockTickerPos(),
                 this.rackManager.getRackPositions(), interval, () -> this.refreshInventorySignatureIfDue(level));
     }
@@ -161,45 +171,18 @@ public class BuildingStockKeeper extends AbstractBuilding {
     public void scanIfDue(Level level) {
         IColony mcolony;
         boolean racksChanged;
-        int interval;
         this.ensureSkillManagerInitialized();
-        int n = interval = this.skillManager != null ? this.skillManager.getRescanIntervalTicks() : 400;
+        int interval = this.skillManager != null
+                ? this.skillManager.getRescanIntervalTicks()
+                : DEFAULT_RESCAN_INTERVAL_TICKS;
         if (this.rackManager.isScanDue(level, interval)
                 && (racksChanged = this.rackManager.rescan(level, this.getBuildingLevel()))
                 && (mcolony = this.getColony()) != null) {
             try {
                 LOGGER.info("{} [DEBUG] scanIfDue: onColonyUpdate triggered (racksChanged=true)", LogTags.ORDERING);
-                // Only notify about requests we handle that are NOT in FOLLOWUP_IN_PROGRESS
-                // Requests with active delivery children should not be re-evaluated
-                mcolony.getRequestManager().onColonyUpdate(req -> {
-                    boolean isOurType = RequestTypes.isSupplyLinesType(req.getRequest());
-                    boolean hasChildren = req.hasChildren();
-                    RequestState state = req.getState();
-
-                    // Return true for ASSIGNING and IN_PROGRESS requests
-                    // FOLLOWUP_IN_PROGRESS means waiting for deliveries, don't interrupt
-                    boolean result;
-                    if (isOurType && hasChildren) {
-                        result = false; // Has active deliveries
-                    } else if (isOurType && state == RequestState.FOLLOWUP_IN_PROGRESS) {
-                        result = false; // Waiting for deliveries to complete
-                    } else if (isOurType && state == RequestState.IN_PROGRESS) {
-                        result = true; // Re-evaluate when racks change
-                    } else if (isOurType && state == RequestState.ASSIGNING) {
-                        result = true; // Looking for a resolver, we can help
-                    } else {
-                        result = false; // Not our type or not relevant state
-                    }
-
-                    if (isOurType) {
-                        LOGGER.debug("{} scanIfDue predicate: id={}, type={}, state={}, hasChildren={}, returning={}",
-                                LogTags.ORDERING, req.getId(), req.getRequest().getClass().getSimpleName(), state,
-                                hasChildren, result);
-                    }
-                    return result;
-                });
-            } catch (Throwable t) {
-                LOGGER.error("{} [DEBUG] scanIfDue: onColonyUpdate threw", LogTags.ORDERING, t);
+                mcolony.getRequestManager().onColonyUpdate(req -> this.shouldReEvaluateRequest(req, null, "scanIfDue"));
+            } catch (Exception e) {
+                LOGGER.error("{} [DEBUG] scanIfDue: onColonyUpdate threw", LogTags.ORDERING, e);
             }
         }
     }
@@ -212,13 +195,81 @@ public class BuildingStockKeeper extends AbstractBuilding {
         return this.rackManager.getRackPositions();
     }
 
+    /**
+     * Evaluates whether a request should be re-evaluated by MineColonies. Used as a
+     * predicate for onColonyUpdate calls.
+     *
+     * @param req
+     *            The request to evaluate
+     * @param toReassign
+     *            Optional list to collect IN_PROGRESS request tokens for
+     *            reassignment
+     * @param logContext
+     *            Context string for debug logging
+     * @return true if the request should be re-evaluated
+     */
+    private boolean shouldReEvaluateRequest(IRequest<?> req, @Nullable List<IToken<?>> toReassign, String logContext) {
+        boolean isOurType = RequestTypes.isSupplyLinesType(req.getRequest());
+        if (!isOurType) {
+            return false;
+        }
+
+        boolean hasChildren = req.hasChildren();
+        RequestState state = req.getState();
+
+        boolean result;
+        if (hasChildren) {
+            result = false; // Has active deliveries
+        } else if (state == RequestState.FOLLOWUP_IN_PROGRESS) {
+            result = false; // Waiting for deliveries to complete
+        } else if (state == RequestState.IN_PROGRESS) {
+            result = true; // Re-evaluate
+            if (toReassign != null) {
+                toReassign.add(req.getId());
+            }
+        } else if (state == RequestState.ASSIGNING) {
+            result = true; // Looking for a resolver, we can help
+        } else {
+            result = false; // Not relevant state
+        }
+
+        if (result) {
+            LOGGER.debug("{} {}: notifying request id={}, type={}, state={}", LogTags.ORDERING, logContext, req.getId(),
+                    req.getRequest().getClass().getSimpleName(), state);
+        }
+        return result;
+    }
+
+    /**
+     * Reassigns IN_PROGRESS requests so they get re-evaluated by MineColonies.
+     *
+     * @param mcolony
+     *            The colony
+     * @param toReassign
+     *            List of request tokens to reassign
+     * @param logContext
+     *            Context string for debug logging
+     */
+    private void reassignRequests(IColony mcolony, List<IToken<?>> toReassign, String logContext) {
+        for (IToken<?> token : toReassign) {
+            try {
+                if (mcolony.getRequestManager().getRequestForToken(token) != null) {
+                    mcolony.getRequestManager().reassignRequest(token, Collections.emptyList());
+                    LOGGER.debug("{} {}: reassigned IN_PROGRESS request {}", LogTags.ORDERING, logContext, token);
+                }
+            } catch (IllegalArgumentException e) {
+                LOGGER.debug("{} {}: request {} already resolved", LogTags.ORDERING, logContext, token);
+            }
+        }
+    }
+
     private void refreshInventorySignatureIfDue(Level level) {
         IColony mcolony;
         long now = level.getGameTime();
         if (now <= 0L) {
             return;
         }
-        if (this.lastInvSigTick != Long.MIN_VALUE && now - this.lastInvSigTick < 40L) {
+        if (this.lastInvSigTick != Long.MIN_VALUE && now - this.lastInvSigTick < DEFAULT_INV_SIG_INTERVAL_TICKS) {
             return;
         }
         long sig = this.computeInventorySignature(level);
@@ -230,47 +281,11 @@ public class BuildingStockKeeper extends AbstractBuilding {
             try {
                 LOGGER.debug("{} Inventory signature changed from {} to {}", LogTags.ORDERING, prevSig, sig);
                 ArrayList<IToken<?>> toReassign = new ArrayList<>();
-                mcolony.getRequestManager().onColonyUpdate(req -> {
-                    boolean isOurType = RequestTypes.isSupplyLinesType(req.getRequest());
-                    boolean hasChildren = req.hasChildren();
-                    RequestState state = req.getState();
-
-                    // Return true for ASSIGNING and IN_PROGRESS requests
-                    // FOLLOWUP_IN_PROGRESS means waiting for deliveries, don't interrupt
-                    boolean result;
-                    if (isOurType && hasChildren) {
-                        result = false; // Has active deliveries
-                    } else if (isOurType && state == RequestState.FOLLOWUP_IN_PROGRESS) {
-                        result = false; // Waiting for deliveries to complete
-                    } else if (isOurType && state == RequestState.IN_PROGRESS) {
-                        result = true; // Re-evaluate when inventory changes
-                        toReassign.add(req.getId());
-                    } else if (isOurType && state == RequestState.ASSIGNING) {
-                        result = true; // Looking for a resolver, we can help
-                    } else {
-                        result = false; // Not our type or not relevant state
-                    }
-
-                    if (isOurType && result) {
-                        LOGGER.debug("{} refreshInventorySignatureIfDue: notifying request id={}, type={}, state={}",
-                                LogTags.ORDERING, req.getId(), req.getRequest().getClass().getSimpleName(), state);
-                    }
-                    return result;
-                });
-                // Explicitly reassign IN_PROGRESS requests so they get re-evaluated
-                for (IToken<?> token : toReassign) {
-                    try {
-                        if (mcolony.getRequestManager().getRequestForToken(token) != null) {
-                            mcolony.getRequestManager().reassignRequest(token, Collections.emptyList());
-                            LOGGER.debug("{} refreshInventorySignatureIfDue: reassigned IN_PROGRESS request {}",
-                                    LogTags.ORDERING, token);
-                        }
-                    } catch (IllegalArgumentException e) {
-                        // Request may have been resolved already
-                    }
-                }
-            } catch (Throwable t) {
-                LOGGER.error("{} refreshInventorySignatureIfDue: onColonyUpdate threw", LogTags.ORDERING, t);
+                mcolony.getRequestManager().onColonyUpdate(
+                        req -> this.shouldReEvaluateRequest(req, toReassign, "refreshInventorySignatureIfDue"));
+                this.reassignRequests(mcolony, toReassign, "refreshInventorySignatureIfDue");
+            } catch (Exception e) {
+                LOGGER.error("{} refreshInventorySignatureIfDue: onColonyUpdate threw", LogTags.ORDERING, e);
             }
         }
     }
@@ -362,7 +377,9 @@ public class BuildingStockKeeper extends AbstractBuilding {
 
     private void updateStockSnapshotIfDue(Level level) {
         this.ensureSkillManagerInitialized();
-        int interval = this.skillManager != null ? this.skillManager.getStockSnapshotIntervalTicks() : 200;
+        int interval = this.skillManager != null
+                ? this.skillManager.getStockSnapshotIntervalTicks()
+                : DEFAULT_STOCK_SNAPSHOT_INTERVAL_TICKS;
         this.networkIntegration.updateStockSnapshotIfDue(level, this.rackManager.getStockTickerPos(), interval,
                 () -> this.reassignPendingRequestsOnStockChange(level));
     }
@@ -378,47 +395,11 @@ public class BuildingStockKeeper extends AbstractBuilding {
         }
         try {
             ArrayList<IToken<?>> toReassign = new ArrayList<>();
-            mcolony.getRequestManager().onColonyUpdate(req -> {
-                boolean isOurType = RequestTypes.isSupplyLinesType(req.getRequest());
-                boolean hasChildren = req.hasChildren();
-                RequestState state = req.getState();
-
-                // Return true for ASSIGNING and IN_PROGRESS requests
-                // FOLLOWUP_IN_PROGRESS means waiting for deliveries, don't interrupt
-                boolean result;
-                if (isOurType && hasChildren) {
-                    result = false; // Has active deliveries
-                } else if (isOurType && state == RequestState.FOLLOWUP_IN_PROGRESS) {
-                    result = false; // Waiting for deliveries to complete
-                } else if (isOurType && state == RequestState.IN_PROGRESS) {
-                    result = true; // Re-evaluate when stock changes
-                    toReassign.add(req.getId());
-                } else if (isOurType && state == RequestState.ASSIGNING) {
-                    result = true; // Looking for a resolver, we can help
-                } else {
-                    result = false; // Not our type or not relevant state
-                }
-
-                if (isOurType && result) {
-                    LOGGER.debug("{} reassignPendingRequestsOnStockChange: notifying request id={}, type={}, state={}",
-                            LogTags.ORDERING, req.getId(), req.getRequest().getClass().getSimpleName(), state);
-                }
-                return result;
-            });
-            // Explicitly reassign IN_PROGRESS requests so they get re-evaluated
-            for (IToken<?> token : toReassign) {
-                try {
-                    if (mcolony.getRequestManager().getRequestForToken(token) != null) {
-                        mcolony.getRequestManager().reassignRequest(token, Collections.emptyList());
-                        LOGGER.debug("{} reassignPendingRequestsOnStockChange: reassigned IN_PROGRESS request {}",
-                                LogTags.ORDERING, token);
-                    }
-                } catch (IllegalArgumentException e) {
-                    // Request may have been resolved already
-                }
-            }
-        } catch (Throwable t) {
-            LOGGER.error("{} reassignPendingRequestsOnStockChange threw", LogTags.ORDERING, t);
+            mcolony.getRequestManager().onColonyUpdate(
+                    req -> this.shouldReEvaluateRequest(req, toReassign, "reassignPendingRequestsOnStockChange"));
+            this.reassignRequests(mcolony, toReassign, "reassignPendingRequestsOnStockChange");
+        } catch (Exception e) {
+            LOGGER.error("{} reassignPendingRequestsOnStockChange threw", LogTags.ORDERING, e);
         }
     }
 
@@ -438,11 +419,11 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (worker == null) {
             return;
         }
-        List assignedCitizens = worker.getAssignedCitizen();
+        List<ICitizenData> assignedCitizens = worker.getAssignedCitizen();
         if (assignedCitizens.isEmpty()) {
             return;
         }
-        ICitizenData citizen = (ICitizenData) assignedCitizens.get(0);
+        ICitizenData citizen = assignedCitizens.get(0);
         if (citizen == null) {
             return;
         }
@@ -450,8 +431,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (skillHandler == null) {
             return;
         }
-        Random random = new Random();
-        Skill skill = random.nextBoolean() ? Skill.Strength : Skill.Dexterity;
+        Skill skill = RANDOM.nextBoolean() ? Skill.Strength : Skill.Dexterity;
         skillHandler.addXpToSkill(skill, baseXp, citizen);
     }
 }

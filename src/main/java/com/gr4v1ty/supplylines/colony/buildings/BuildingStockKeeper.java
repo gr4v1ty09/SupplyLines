@@ -68,7 +68,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
 
     public BuildingStockKeeper(IColony colony, BlockPos pos) {
         super(colony, pos);
-        this.rackManager = new RackManager(pos, colony);
+        this.rackManager = new RackManager(this);
         this.networkIntegration = new NetworkIntegration(colony);
         this.requestHandler = new RequestHandler(colony, pos);
     }
@@ -312,14 +312,6 @@ public class BuildingStockKeeper extends AbstractBuilding {
 
     public long getStockLevel(ItemStack item) {
         return this.networkIntegration.getStockLevel(item);
-    }
-
-    public void setScanRadius(int v) {
-        this.rackManager.setScanRadius(v);
-    }
-
-    public void setRackLimit(int v) {
-        this.rackManager.setRackLimit(v);
     }
 
     public boolean requestFromStockNetwork(ItemStack item, int quantity, IToken<?> requestId) {

@@ -1,7 +1,7 @@
 package com.gr4v1ty.supplylines.colony.manager;
 
 import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
-import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.buildings.IBuilding;
 import com.simibubi.create.AllBlocks;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,18 +24,17 @@ public final class RackManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(RackManager.class);
     @SuppressWarnings("removal") // ResourceLocation constructor deprecated in Forge 47.x, will migrate in 1.21
     public static final ResourceLocation RACK_ID = new ResourceLocation("minecolonies", "blockminecoloniesrack");
-    private int scanRadius = 16;
-    private int rackLimit = 16;
+    private static final int AUXILIARY_SCAN_RADIUS = 16;
     @Nullable
     private final Block rackBlock = (Block) ForgeRegistries.BLOCKS.getValue(RACK_ID);
     private final List<BlockPos> rackPositions = new ArrayList<BlockPos>();
     private BlockPos stockTickerPos;
     private BlockPos seatPos;
     private long lastScanGameTime = Long.MIN_VALUE;
-    private final BlockPos buildingPosition;
+    private final IBuilding building;
 
-    public RackManager(BlockPos buildingPosition, IColony colony) {
-        this.buildingPosition = buildingPosition;
+    public RackManager(IBuilding building) {
+        this.building = building;
     }
 
     public boolean rescan(Level level, int buildingLevel) {
@@ -47,7 +46,7 @@ public final class RackManager {
         this.rackPositions.addAll(this.scanRacks(level));
         this.lastScanGameTime = Math.max(1L, level.getGameTime());
         if (buildingLevel >= BuildingStockKeeper.STOCK_TICKER_REQUIRED_LEVEL) {
-            this.stockTickerPos = this.findNearestBlock(level, this.buildingPosition, this.scanRadius,
+            this.stockTickerPos = this.findNearestBlock(level, this.building.getPosition(), AUXILIARY_SCAN_RADIUS,
                     (Block) AllBlocks.STOCK_TICKER.get());
             this.seatPos = this.findNearestSeat(level);
         }
@@ -78,46 +77,22 @@ public final class RackManager {
         return this.seatPos;
     }
 
-    public long getLastScanGameTime() {
-        return this.lastScanGameTime;
-    }
-
-    public void setScanRadius(int v) {
-        this.scanRadius = Math.max(1, v);
-    }
-
-    public void setRackLimit(int v) {
-        this.rackLimit = Math.max(1, v);
-    }
-
-    public int getScanRadius() {
-        return this.scanRadius;
-    }
-
-    public int getRackLimit() {
-        return this.rackLimit;
-    }
-
+    /**
+     * Gets racks belonging to this building using MineColonies' container registry.
+     * This ensures we only use racks that are part of our building, not nearby
+     * buildings.
+     */
     private List<BlockPos> scanRacks(Level level) {
-        if (level == null || this.rackBlock == null) {
+        if (level == null || this.rackBlock == null || this.building == null) {
             return List.of();
         }
         ArrayList<BlockPos> racks = new ArrayList<BlockPos>();
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        int r = Math.max(1, this.scanRadius);
-        for (int dx = -r; dx <= r; ++dx) {
-            for (int dy = -2; dy <= 3; ++dy) {
-                for (int dz = -r; dz <= r; ++dz) {
-                    m.set(this.buildingPosition.getX() + dx, this.buildingPosition.getY() + dy,
-                            this.buildingPosition.getZ() + dz);
-                    BlockState state = level.getBlockState((BlockPos) m);
-                    if (!state.is(this.rackBlock))
-                        continue;
-                    racks.add(m.immutable());
-                    if (racks.size() < this.rackLimit)
-                        continue;
-                    return racks;
-                }
+        // Use MineColonies' container list which tracks racks registered to this
+        // building
+        for (BlockPos pos : this.building.getContainers()) {
+            BlockState state = level.getBlockState(pos);
+            if (state.is(this.rackBlock)) {
+                racks.add(pos);
             }
         }
         return racks;
@@ -151,13 +126,14 @@ public final class RackManager {
 
     @Nullable
     private BlockPos findNearestSeat(Level level) {
-        if (level == null) {
+        if (level == null || this.building == null) {
             return null;
         }
         for (DyeColor color : DyeColor.values()) {
             try {
                 Block seatBlock = (Block) AllBlocks.SEATS.get(color).get();
-                BlockPos found = this.findNearestBlock(level, this.buildingPosition, this.scanRadius, seatBlock);
+                BlockPos found = this.findNearestBlock(level, this.building.getPosition(), AUXILIARY_SCAN_RADIUS,
+                        seatBlock);
                 if (found == null)
                     continue;
                 return found;

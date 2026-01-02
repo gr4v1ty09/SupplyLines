@@ -1,4 +1,4 @@
-# 🚚 Supply Lines
+# Supply Lines
 
 **Minecolonies × Create**
 
@@ -8,7 +8,7 @@ Instead of forcing everything into a single storage system, Supply Lines lets yo
 
 ***
 
-## ✨ What Does Supply Lines Do?
+## What Does Supply Lines Do?
 
 Supply Lines adds a **new Minecolonies building and job** that acts as a supply bridge between your colony and external production.
 
@@ -19,7 +19,7 @@ Supply Lines adds a **new Minecolonies building and job** that acts as a supply 
 
 ***
 
-## 📐 Blueprint-Based Behavior
+## Blueprint-Based Behavior
 
 Supply Lines uses **Structurize blueprints** to define how the building functions.
 
@@ -33,7 +33,7 @@ Just like Minecolonies style packs, SupplyLines blueprints can be custom tailore
 
 ***
 
-## 🏗️ Building Progression
+## Building Progression
 
 The Stock Keeper's building evolves as your colony grows:
 
@@ -53,16 +53,8 @@ The Stock Keeper's building evolves as your colony grows:
 
 ***
 
-## 🧠 Design Philosophy
 
-*   ✔️ **Respects Minecolonies gameplay**
-*   ✔️ **Does not automate or replace Create**
-*   ✔️ **Blueprint-driven and player-built**
-*   ✔️ **Scales naturally into late game logistics**
-
-***
-
-## 📦 Compatibility
+## Compatibility
 
 *   Minecraft 1.20.1
 *   Create 6.0.6
@@ -70,7 +62,7 @@ The Stock Keeper's building evolves as your colony grows:
 
 ***
 
-## 🚧 Development Status
+## Development Status
 
 Supply Lines is currently in **Alpha**.
 

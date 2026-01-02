@@ -27,3 +27,4 @@ libs/
 
 # Built JARs (keep libs/ for manual dependencies)
 *.jar
+VERSIONING.md

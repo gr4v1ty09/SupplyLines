@@ -1,13 +1,12 @@
 package com.gr4v1ty.supplylines;
 
-import com.gr4v1ty.supplylines.compat.structurize.CreateVaultPlacementHandler;
+import com.gr4v1ty.supplylines.compat.structurize.CreateMultiblockPlacementHandler;
 import com.gr4v1ty.supplylines.registry.ModBlocks;
 import com.gr4v1ty.supplylines.registry.ModBuildings;
 import com.gr4v1ty.supplylines.registry.ModItems;
 import com.gr4v1ty.supplylines.registry.ModJobs;
 import com.gr4v1ty.supplylines.rs.SupplyLinesRequestSystem;
 import com.gr4v1ty.supplylines.util.ModVersion;
-import com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler;
 import com.ldtteam.structurize.placement.handlers.placement.PlacementHandlers;
 import com.minecolonies.api.sounds.ModSoundEvents;
 import org.slf4j.LoggerFactory;
@@ -48,7 +47,7 @@ public final class SupplyLines {
                 LOGGER.error("[{}] Failed to register Request System factories", (Object) MOD_ID, (Object) ex);
             }
             e.enqueueWork(() -> {
-                PlacementHandlers.add((IPlacementHandler) new CreateVaultPlacementHandler());
+                PlacementHandlers.add(new CreateMultiblockPlacementHandler());
                 String myJobKey = "stock_keeper";
                 String[] fallbacks = new String[]{"deliveryman", "unemployed", "builder"};
                 Map map = ModSoundEvents.CITIZEN_SOUND_EVENTS;

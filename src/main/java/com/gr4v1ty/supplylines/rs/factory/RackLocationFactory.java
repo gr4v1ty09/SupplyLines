@@ -8,7 +8,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -45,7 +44,7 @@ public final class RackLocationFactory implements ILocationFactory<RackLocation.
         pos.putInt("x", output.getInDimensionLocation().getX());
         pos.putInt("y", output.getInDimensionLocation().getY());
         pos.putInt("z", output.getInDimensionLocation().getZ());
-        tag.put(TAG_POS, (Tag) pos);
+        tag.put(TAG_POS, pos);
         if (output.getFace() != null) {
             tag.putString(TAG_FACE, output.getFace().getName());
         }
@@ -57,12 +56,12 @@ public final class RackLocationFactory implements ILocationFactory<RackLocation.
     @SuppressWarnings("removal") // ResourceLocation constructor deprecated in Forge 47.x, will migrate in 1.21
     public RackLocation deserialize(@NotNull IFactoryController controller, @NotNull CompoundTag compound) {
         ResourceLocation dimRL = new ResourceLocation(compound.getString(TAG_DIM));
-        ResourceKey dim = ResourceKey.create((ResourceKey) Registries.DIMENSION, (ResourceLocation) dimRL);
+        ResourceKey<Level> dim = ResourceKey.create(Registries.DIMENSION, dimRL);
         CompoundTag p = compound.getCompound(TAG_POS);
         BlockPos pos = new BlockPos(p.getInt("x"), p.getInt("y"), p.getInt("z"));
-        Direction face = compound.contains(TAG_FACE) ? Direction.byName((String) compound.getString(TAG_FACE)) : null;
+        Direction face = compound.contains(TAG_FACE) ? Direction.byName(compound.getString(TAG_FACE)) : null;
         int slotIndex = compound.contains(TAG_SLOT) ? compound.getInt(TAG_SLOT) : -1;
-        return new RackLocation((ResourceKey<Level>) dim, pos, face, slotIndex);
+        return new RackLocation(dim, pos, face, slotIndex);
     }
 
     public void serialize(@NotNull IFactoryController controller, @NotNull RackLocation output,
@@ -83,18 +82,18 @@ public final class RackLocationFactory implements ILocationFactory<RackLocation.
     @NotNull
     public RackLocation deserialize(@NotNull IFactoryController controller, @NotNull FriendlyByteBuf buffer) {
         ResourceLocation dimRL = buffer.readResourceLocation();
-        ResourceKey dim = ResourceKey.create((ResourceKey) Registries.DIMENSION, (ResourceLocation) dimRL);
+        ResourceKey<Level> dim = ResourceKey.create(Registries.DIMENSION, dimRL);
         int x = buffer.readInt();
         int y = buffer.readInt();
         int z = buffer.readInt();
         BlockPos pos = new BlockPos(x, y, z);
         boolean hasFace = buffer.readBoolean();
-        Direction face = hasFace ? Direction.from3DDataValue((int) buffer.readVarInt()) : null;
+        Direction face = hasFace ? Direction.from3DDataValue(buffer.readVarInt()) : null;
         int slotIndex = buffer.readVarInt();
-        return new RackLocation((ResourceKey<Level>) dim, pos, face, slotIndex);
+        return new RackLocation(dim, pos, face, slotIndex);
     }
 
     public short getSerializationId() {
-        return 31012;
+        return SERIALIZATION_ID;
     }
 }

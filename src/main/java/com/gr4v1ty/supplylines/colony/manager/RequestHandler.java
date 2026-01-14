@@ -1,15 +1,17 @@
 package com.gr4v1ty.supplylines.colony.manager;
 
 import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
-import com.gr4v1ty.supplylines.rs.ResolverAssemblyBuilder;
+import com.gr4v1ty.supplylines.rs.SupplyLinesRequestSystem;
 import com.gr4v1ty.supplylines.rs.location.IntakeLocation;
+import com.gr4v1ty.supplylines.rs.resolver.BurnableResolver;
+import com.gr4v1ty.supplylines.rs.resolver.FoodResolver;
+import com.gr4v1ty.supplylines.rs.resolver.ResolverComponents;
+import com.gr4v1ty.supplylines.rs.resolver.StackListResolver;
+import com.gr4v1ty.supplylines.rs.resolver.StackResolver;
+import com.gr4v1ty.supplylines.rs.resolver.TagResolver;
+import com.gr4v1ty.supplylines.rs.resolver.ToolResolver;
 import com.gr4v1ty.supplylines.rs.util.DeliveryPlanning;
-import com.gr4v1ty.supplylines.rs.verifier.FoodDeliveryVerifier;
-import com.gr4v1ty.supplylines.rs.verifier.StackDeliveryVerifier;
-import com.gr4v1ty.supplylines.rs.verifier.StackListDeliveryVerifier;
-import com.gr4v1ty.supplylines.rs.verifier.TagDeliveryVerifier;
-import com.gr4v1ty.supplylines.rs.verifier.ToolDeliveryVerifier;
-import com.gr4v1ty.supplylines.util.inventory.DeliveryVerifier;
+import com.gr4v1ty.supplylines.util.LogTags;
 import com.gr4v1ty.supplylines.util.RequestTypes;
 import com.gr4v1ty.supplylines.util.inventory.RackPicker;
 import com.minecolonies.api.colony.IColony;
@@ -17,25 +19,25 @@ import com.minecolonies.api.colony.requestsystem.location.ILocation;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
-import com.minecolonies.api.colony.requestsystem.requestable.Food;
-import com.minecolonies.api.colony.requestsystem.requestable.RequestTag;
-import com.minecolonies.api.colony.requestsystem.requestable.Stack;
-import com.minecolonies.api.colony.requestsystem.requestable.StackList;
-import com.minecolonies.api.colony.requestsystem.requestable.Tool;
+import com.minecolonies.api.colony.requestsystem.requestable.IRequestable;
+import com.minecolonies.api.colony.requestsystem.resolver.IRequestResolver;
 import com.minecolonies.api.colony.requestsystem.requester.IRequester;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
-import com.gr4v1ty.supplylines.util.LogTags;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public final class RequestHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(RequestHandler.class);
+
+    // Tracks providers registered this session (cleared on world unload)
+    private static final Set<UUID> registeredProviders = ConcurrentHashMap.newKeySet();
 
     // UUID prefixes for deterministic ID generation
     private static final String PROVIDER_PREFIX = "supplylines:provider:";
@@ -44,6 +46,7 @@ public final class RequestHandler {
     private static final String TAG_RESOLVER_PREFIX = "supplylines:sktagresolver:";
     private static final String STACKLIST_RESOLVER_PREFIX = "supplylines:skstacklistresolver:";
     private static final String FOOD_RESOLVER_PREFIX = "supplylines:skfoodresolver:";
+    private static final String BURNABLE_RESOLVER_PREFIX = "supplylines:skburnableresolver:";
 
     private final UUID providerId;
     private final UUID skStackId;
@@ -51,6 +54,7 @@ public final class RequestHandler {
     private final UUID skTagId;
     private final UUID skStackListId;
     private final UUID skFoodId;
+    private final UUID skBurnableId;
     private final IColony colony;
     private final BlockPos buildingPosition;
 
@@ -65,60 +69,98 @@ public final class RequestHandler {
         this.skTagId = UUID.nameUUIDFromBytes((TAG_RESOLVER_PREFIX + seed).getBytes());
         this.skStackListId = UUID.nameUUIDFromBytes((STACKLIST_RESOLVER_PREFIX + seed).getBytes());
         this.skFoodId = UUID.nameUUIDFromBytes((FOOD_RESOLVER_PREFIX + seed).getBytes());
+        this.skBurnableId = UUID.nameUUIDFromBytes((BURNABLE_RESOLVER_PREFIX + seed).getBytes());
     }
 
     /**
-     * Ensures the provider is registered with MineColonies' request system. This
-     * method is idempotent - safe to call every tick. MineColonies will tell us if
-     * we're already registered (via IllegalArgumentException), so we don't need to
-     * track registration state locally.
+     * Ensures the provider is registered with MineColonies' request system. Uses a
+     * static set to track registrations this session for fast-path return.
      */
     public void ensureRSRegistered(Level level, List<BlockPos> rackPositions, BuildingStockKeeper stockKeeperBuilding) {
         if (level == null || level.isClientSide()) {
             return;
         }
 
-        // Always attempt registration - MineColonies will tell us if already done
-        // This is idempotent and safe to call every tick
-        IRequestManager rm = this.colony.getRequestManager();
-        IntakeLocation anchor = new IntakeLocation((ResourceKey<Level>) this.colony.getDimension(),
-                this.buildingPosition);
-        Predicate<IRequester> consumerFilter = r -> true;
-        Function<IRequester, ILocation> intakeLocator = requester -> {
-            ILocation loc = requester.getLocation();
-            return new IntakeLocation((ResourceKey<Level>) loc.getDimension(), loc.getInDimensionLocation());
-        };
-        Function<IRequest<? extends Stack>, List<DeliveryPlanning.Pick>> stackPicker = this.makeStackPicker(level,
-                rackPositions);
-        Function<IRequest<? extends Tool>, List<DeliveryPlanning.Pick>> toolPicker = this.makeToolPicker(level,
-                rackPositions);
-        Function<IRequest<? extends RequestTag>, List<DeliveryPlanning.Pick>> tagPicker = this.makeTagPicker(level,
-                rackPositions);
-        Function<IRequest<? extends StackList>, List<DeliveryPlanning.Pick>> stackListPicker = this
-                .makeStackListPicker(level, rackPositions);
-        Function<IRequest<? extends Food>, List<DeliveryPlanning.Pick>> foodPicker = this.makeFoodPicker(level,
-                rackPositions);
-        StackDeliveryVerifier stackVerifier = (mgr, dest, parent) -> DeliveryVerifier.verifyDelivery(level, dest,
-                (Stack) parent.getRequest());
-        ToolDeliveryVerifier toolVerifier = (mgr, dest, parent) -> DeliveryVerifier.verifyToolDelivery(level, dest,
-                (Tool) parent.getRequest());
-        TagDeliveryVerifier tagVerifier = (mgr, dest, parent) -> DeliveryVerifier.verifyTagDelivery(level, dest,
-                (RequestTag) parent.getRequest());
-        StackListDeliveryVerifier stackListVerifier = (mgr, dest, parent) -> DeliveryVerifier
-                .verifyStackListDelivery(level, dest, (StackList) parent.getRequest());
-        FoodDeliveryVerifier foodVerifier = (mgr, dest, parent) -> DeliveryVerifier.verifyFoodDelivery(level, dest,
-                (Food) parent.getRequest());
+        // Fast path: already registered this session
+        if (registeredProviders.contains(this.providerId)) {
+            return;
+        }
 
-        // ResolverAssemblyBuilder.build() calls
-        // SupplyLinesRequestSystem.registerProvider()
-        // which is idempotent - catches IllegalArgumentException if already registered
-        ResolverAssemblyBuilder.create(rm, this.providerId, anchor)
-                .withStackResolver(this.skStackId, stackPicker, stackVerifier)
-                .withToolResolver(this.skToolId, toolPicker, toolVerifier)
-                .withTagResolver(this.skTagId, tagPicker, tagVerifier)
-                .withStackListResolver(this.skStackListId, stackListPicker, stackListVerifier)
-                .withFoodResolver(this.skFoodId, foodPicker, foodVerifier).consumerFilter(consumerFilter)
-                .intakeLocator(intakeLocator).priority(80).build();
+        IRequestManager rm = this.colony.getRequestManager();
+        IntakeLocation anchor = new IntakeLocation(this.colony.getDimension(), this.buildingPosition);
+
+        // Register components in static registry before creating resolvers
+        registerComponents(level, rackPositions);
+
+        // Create resolvers (they look up components from the static registry)
+        List<IRequestResolver<?>> resolvers = List.of(new StackResolver(this.skStackId, anchor),
+                new ToolResolver(this.skToolId, anchor), new TagResolver(this.skTagId, anchor),
+                new StackListResolver(this.skStackListId, anchor), new FoodResolver(this.skFoodId, anchor),
+                new BurnableResolver(this.skBurnableId, anchor));
+
+        // Register with MineColonies
+        SupplyLinesRequestSystem.registerProvider(rm, this.providerId, resolvers);
+        registeredProviders.add(this.providerId);
+
+        // MineColonies may have already called canResolveRequest() on deserialized
+        // resolvers BEFORE components were ready (returned false). Now that components
+        // are registered, trigger reassignment so MineColonies re-evaluates pending
+        // requests.
+        LOGGER.info("{} First registration complete, triggering reassignment", LogTags.ORDERING);
+        this.triggerReassignment();
+    }
+
+    /**
+     * Registers components for all resolver types in the static registry.
+     */
+    private void registerComponents(Level level, List<BlockPos> rackPositions) {
+        Predicate<IRequester> filter = r -> true;
+        Function<IRequester, ILocation> locator = requester -> {
+            ILocation loc = requester.getLocation();
+            return new IntakeLocation(loc.getDimension(), loc.getInDimensionLocation());
+        };
+        int priority = 80;
+
+        LOGGER.debug(
+                "{} Registering components for 6 resolvers: stack={}, tool={}, tag={}, stacklist={}, food={}, burnable={}",
+                LogTags.ORDERING, this.skStackId, this.skToolId, this.skTagId, this.skStackListId, this.skFoodId,
+                this.skBurnableId);
+
+        ResolverComponents.register(this.skStackId,
+                new ResolverComponents<>(filter, priority, locator,
+                        makePicker(level, rackPositions, RackPicker::pickFromRacks),
+                        (mgr, dest, req) -> com.gr4v1ty.supplylines.util.inventory.DeliveryVerifier
+                                .verifyDelivery(level, dest, req.getRequest())));
+
+        ResolverComponents.register(this.skToolId,
+                new ResolverComponents<>(filter, priority, locator,
+                        makePicker(level, rackPositions, RackPicker::pickToolFromRacks),
+                        (mgr, dest, req) -> com.gr4v1ty.supplylines.util.inventory.DeliveryVerifier
+                                .verifyToolDelivery(level, dest, req.getRequest())));
+
+        ResolverComponents.register(this.skTagId,
+                new ResolverComponents<>(filter, priority, locator,
+                        makePicker(level, rackPositions, RackPicker::pickFromRacksByTag),
+                        (mgr, dest, req) -> com.gr4v1ty.supplylines.util.inventory.DeliveryVerifier
+                                .verifyTagDelivery(level, dest, req.getRequest())));
+
+        ResolverComponents.register(this.skStackListId,
+                new ResolverComponents<>(filter, priority, locator,
+                        makePicker(level, rackPositions, RackPicker::pickFromRacksByStackList),
+                        (mgr, dest, req) -> com.gr4v1ty.supplylines.util.inventory.DeliveryVerifier
+                                .verifyStackListDelivery(level, dest, req.getRequest())));
+
+        ResolverComponents.register(this.skFoodId,
+                new ResolverComponents<>(filter, priority, locator,
+                        makePicker(level, rackPositions, RackPicker::pickFoodFromRacks),
+                        (mgr, dest, req) -> com.gr4v1ty.supplylines.util.inventory.DeliveryVerifier
+                                .verifyFoodDelivery(level, dest, req.getRequest())));
+
+        ResolverComponents.register(this.skBurnableId,
+                new ResolverComponents<>(filter, priority, locator,
+                        makePicker(level, rackPositions, RackPicker::pickBurnableFromRacks),
+                        (mgr, dest, req) -> com.gr4v1ty.supplylines.util.inventory.DeliveryVerifier
+                                .verifyBurnableDelivery(level, dest, req.getRequest())));
     }
 
     /**
@@ -129,8 +171,20 @@ public final class RequestHandler {
         if (level == null || level.isClientSide()) {
             return;
         }
-        ResolverAssemblyBuilder.unregister(this.colony.getRequestManager(), this.providerId, this.skStackId,
-                this.skToolId, this.skTagId, this.skStackListId, this.skFoodId);
+
+        // Remove from tracking set
+        registeredProviders.remove(this.providerId);
+
+        // Unregister components from static registry
+        ResolverComponents.unregister(this.skStackId);
+        ResolverComponents.unregister(this.skToolId);
+        ResolverComponents.unregister(this.skTagId);
+        ResolverComponents.unregister(this.skStackListId);
+        ResolverComponents.unregister(this.skFoodId);
+        ResolverComponents.unregister(this.skBurnableId);
+
+        // Unregister from MineColonies
+        SupplyLinesRequestSystem.unregisterProvider(this.colony.getRequestManager(), this.providerId);
     }
 
     public void triggerReassignment() {
@@ -140,8 +194,6 @@ public final class RequestHandler {
                 boolean hasChildren = req.hasChildren();
                 RequestState state = req.getState();
 
-                // Return true for ASSIGNING and IN_PROGRESS requests
-                // FOLLOWUP_IN_PROGRESS means waiting for deliveries, don't interrupt
                 boolean result;
                 if (isOurType && hasChildren) {
                     result = false; // Has active deliveries
@@ -161,52 +213,33 @@ public final class RequestHandler {
                 }
                 return result;
             });
-        } catch (Throwable t) {
-            LOGGER.error("{} triggerReassignment: onColonyUpdate threw", LogTags.ORDERING, t);
+        } catch (RuntimeException e) {
+            LOGGER.error("{} triggerReassignment: onColonyUpdate threw", LogTags.ORDERING, e);
         }
     }
 
-    private Function<IRequest<? extends Stack>, List<DeliveryPlanning.Pick>> makeStackPicker(Level level,
-            List<BlockPos> rackPositions) {
-        return parent -> {
-            List source = rackPositions;
-            return RackPicker.pickFromRacks(level, this.colony, source, (Stack) parent.getRequest());
-        };
+    /**
+     * Generic picker factory method that eliminates duplication.
+     */
+    @FunctionalInterface
+    private interface PickerFunction<T extends IRequestable> {
+        List<DeliveryPlanning.Pick> pick(Level level, IColony colony, List<BlockPos> positions, T request);
     }
 
-    private Function<IRequest<? extends Tool>, List<DeliveryPlanning.Pick>> makeToolPicker(Level level,
-            List<BlockPos> rackPositions) {
-        return parent -> {
-            List source = rackPositions;
-            return RackPicker.pickToolFromRacks(level, this.colony, source, (Tool) parent.getRequest());
-        };
-    }
-
-    private Function<IRequest<? extends RequestTag>, List<DeliveryPlanning.Pick>> makeTagPicker(Level level,
-            List<BlockPos> rackPositions) {
-        return parent -> {
-            List source = rackPositions;
-            return RackPicker.pickFromRacksByTag(level, this.colony, source, (RequestTag) parent.getRequest());
-        };
-    }
-
-    private Function<IRequest<? extends StackList>, List<DeliveryPlanning.Pick>> makeStackListPicker(Level level,
-            List<BlockPos> rackPositions) {
-        return parent -> {
-            List source = rackPositions;
-            return RackPicker.pickFromRacksByStackList(level, this.colony, source, (StackList) parent.getRequest());
-        };
-    }
-
-    private Function<IRequest<? extends Food>, List<DeliveryPlanning.Pick>> makeFoodPicker(Level level,
-            List<BlockPos> rackPositions) {
-        return parent -> {
-            List source = rackPositions;
-            return RackPicker.pickFoodFromRacks(level, this.colony, source, (Food) parent.getRequest());
-        };
+    private <T extends IRequestable> Function<IRequest<? extends T>, List<DeliveryPlanning.Pick>> makePicker(
+            Level level, List<BlockPos> rackPositions, PickerFunction<T> pickMethod) {
+        return parent -> pickMethod.pick(level, this.colony, rackPositions, parent.getRequest());
     }
 
     public UUID getProviderId() {
         return this.providerId;
+    }
+
+    /**
+     * Clears the registration tracking set. Called on world unload.
+     */
+    public static void clearRegistrationTracking() {
+        registeredProviders.clear();
+        ResolverComponents.clear();
     }
 }

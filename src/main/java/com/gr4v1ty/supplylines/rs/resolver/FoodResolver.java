@@ -2,20 +2,12 @@ package com.gr4v1ty.supplylines.rs.resolver;
 
 import com.google.common.reflect.TypeToken;
 import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
-import com.gr4v1ty.supplylines.rs.util.DeliveryPlanning;
-import com.gr4v1ty.supplylines.rs.verifier.FoodDeliveryVerifier;
+import com.gr4v1ty.supplylines.util.LogTags;
 import com.minecolonies.api.colony.requestsystem.location.ILocation;
-import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.Food;
-import com.minecolonies.api.colony.requestsystem.requester.IRequester;
-import java.util.List;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.function.Predicate;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import com.gr4v1ty.supplylines.util.LogTags;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,16 +18,6 @@ public final class FoodResolver extends AbstractResolver<Food> {
         super(resolverId, resolverLocation);
     }
 
-    public FoodResolver(@NotNull UUID resolverId, @NotNull ILocation resolverLocation,
-            @NotNull Predicate<IRequester> consumerFilter, int priority,
-            @NotNull Function<IRequester, ILocation> intakeLocator,
-            @NotNull Function<IRequest<? extends Food>, List<DeliveryPlanning.Pick>> picker,
-            @NotNull FoodDeliveryVerifier verifier) {
-        super(resolverId, resolverLocation);
-        ResolverComponentRegistry.registerFoodComponents(resolverId, new ResolverComponentRegistry.FoodComponents(
-                consumerFilter, priority, intakeLocator, picker, verifier));
-    }
-
     @Override
     @NotNull
     public TypeToken<? extends Food> getRequestType() {
@@ -44,62 +26,24 @@ public final class FoodResolver extends AbstractResolver<Food> {
 
     @Override
     protected int getRequiredCount(IRequest<? extends Food> request) {
-        // Food requests use getCount() - they don't have a separate minimumCount
-        return ((Food) request.getRequest()).getCount();
-    }
-
-    @Override
-    protected boolean hasComponents() {
-        return this.getComponents() != null;
-    }
-
-    @Override
-    protected int getComponentPriority() {
-        ResolverComponentRegistry.FoodComponents comp = this.getComponents();
-        return comp != null ? comp.priority : 0;
-    }
-
-    @Override
-    @Nullable
-    protected Predicate<IRequester> getConsumerFilter() {
-        ResolverComponentRegistry.FoodComponents comp = this.getComponents();
-        return comp != null ? comp.consumerFilter : null;
-    }
-
-    @Override
-    @Nullable
-    protected ILocation getIntakeLocation(IRequester requester) {
-        ResolverComponentRegistry.FoodComponents comp = this.getComponents();
-        return comp != null ? comp.intakeLocator.apply(requester) : null;
-    }
-
-    @Override
-    @Nullable
-    protected List<DeliveryPlanning.Pick> pickFromRacks(IRequest<? extends Food> request) {
-        ResolverComponentRegistry.FoodComponents comp = this.getComponents();
-        return comp != null ? comp.picker.apply(request) : null;
+        return request.getRequest().getCount();
     }
 
     @Override
     protected boolean isAvailableInNetwork(BuildingStockKeeper building, IRequest<? extends Food> request) {
-        long available = building.getStockLevelForFood((Food) request.getRequest());
-        return available >= (long) ((Food) request.getRequest()).getCount();
+        Food foodReq = request.getRequest();
+        long available = building.getStockLevelForFood(foodReq);
+        return available >= (long) foodReq.getCount();
     }
 
     @Override
     protected boolean requestFromStockNetwork(BuildingStockKeeper building, IRequest<? extends Food> request) {
-        return building.requestFromStockNetworkForFood((Food) request.getRequest(), request.getId());
-    }
-
-    @Override
-    protected boolean verifyDelivery(IRequestManager manager, ILocation dest, IRequest<? extends Food> request) {
-        ResolverComponentRegistry.FoodComponents comp = this.getComponents();
-        return comp != null && comp.verifier.isDelivered(manager, dest, request);
+        return building.requestFromStockNetworkForFood(request.getRequest(), request.getId());
     }
 
     @Override
     protected double calculateSkillXP(IRequest<? extends Food> request) {
-        int count = ((Food) request.getRequest()).getCount();
+        int count = request.getRequest().getCount();
         return 1.0 + Math.min((double) count / 16.0, 4.0);
     }
 
@@ -118,7 +62,7 @@ public final class FoodResolver extends AbstractResolver<Food> {
     @Override
     protected void logAttemptResolveRequest(IRequest<? extends Food> request) {
         LOGGER.debug("{} attemptResolveRequest: STARTING for request {} - food count: {}", LogTags.ORDERING,
-                request.getId().toString(), ((Food) request.getRequest()).getCount());
+                request.getId().toString(), request.getRequest().getCount());
     }
 
     @Override
@@ -128,12 +72,6 @@ public final class FoodResolver extends AbstractResolver<Food> {
 
     @Override
     protected String getRequestDescription(IRequest<? extends Food> request) {
-        Food food = (Food) request.getRequest();
-        return food.getCount() + "x Food";
-    }
-
-    @Nullable
-    private ResolverComponentRegistry.FoodComponents getComponents() {
-        return ResolverComponentRegistry.getFoodComponents((UUID) this.id.getIdentifier());
+        return request.getRequest().getCount() + "x Food";
     }
 }

@@ -60,6 +60,6 @@ public final class StackListResolverFactory implements IFactory<FactoryVoidInput
     }
 
     public short getSerializationId() {
-        return 31028;
+        return SERIALIZATION_ID;
     }
 }

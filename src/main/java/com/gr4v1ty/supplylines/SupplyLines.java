@@ -1,6 +1,8 @@
 package com.gr4v1ty.supplylines;
 
 import com.gr4v1ty.supplylines.compat.structurize.CreateMultiblockPlacementHandler;
+import com.gr4v1ty.supplylines.compat.structurize.CreateTrainBlockPreservationHandler;
+import com.gr4v1ty.supplylines.network.ModNetwork;
 import com.gr4v1ty.supplylines.registry.ModBlocks;
 import com.gr4v1ty.supplylines.registry.ModBuildings;
 import com.gr4v1ty.supplylines.registry.ModItems;
@@ -12,10 +14,13 @@ import com.minecolonies.api.sounds.ModSoundEvents;
 import org.slf4j.LoggerFactory;
 import java.util.Map;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import com.gr4v1ty.supplylines.colony.manager.RequestHandler;
 import org.slf4j.Logger;
 
 @Mod(value = "supplylines")
@@ -36,31 +41,41 @@ public final class SupplyLines {
         ModItems.ITEMS.register(modBus);
         ModJobs.JOBS.register(modBus);
         ModBuildings.BUILDINGS.register(modBus);
+        MinecraftForge.EVENT_BUS.addListener(this::onServerStopping);
         modBus.addListener((FMLCommonSetupEvent e) -> {
             LOGGER.info("[{}] Version {} loaded", MOD_ID, ModVersion.get().getDisplayVersion());
             if (ModVersion.get().isDevBuild()) {
                 LOGGER.warn("[{}] This is a development build - not for production use", MOD_ID);
             }
+            ModNetwork.init();
             try {
                 SupplyLinesRequestSystem.registerFactories();
             } catch (Exception ex) {
                 LOGGER.error("[{}] Failed to register Request System factories", (Object) MOD_ID, (Object) ex);
             }
             e.enqueueWork(() -> {
+                PlacementHandlers.add(new CreateTrainBlockPreservationHandler());
                 PlacementHandlers.add(new CreateMultiblockPlacementHandler());
-                String myJobKey = "stock_keeper";
                 String[] fallbacks = new String[]{"deliveryman", "unemployed", "builder"};
+                @SuppressWarnings("rawtypes")
                 Map map = ModSoundEvents.CITIZEN_SOUND_EVENTS;
                 if (map != null && !map.containsKey("stock_keeper")) {
                     for (String fb : fallbacks) {
-                        Map bucket = (Map) map.get(fb);
+                        Object bucket = map.get(fb);
                         if (bucket == null)
                             continue;
-                        map.put("stock_keeper", bucket);
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> typedMap = map;
+                        typedMap.put("stock_keeper", bucket);
                         break;
                     }
                 }
             });
         });
+    }
+
+    private void onServerStopping(ServerStoppingEvent event) {
+        LOGGER.debug("[{}] Server stopping - clearing registration tracking", MOD_ID);
+        RequestHandler.clearRegistrationTracking();
     }
 }

@@ -7,7 +7,6 @@ import com.minecolonies.api.colony.requestsystem.location.ILocationFactory;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -42,7 +41,7 @@ public final class IntakeLocationFactory implements ILocationFactory<IntakeLocat
         pos.putInt("x", output.getInDimensionLocation().getX());
         pos.putInt("y", output.getInDimensionLocation().getY());
         pos.putInt("z", output.getInDimensionLocation().getZ());
-        tag.put(TAG_POS, (Tag) pos);
+        tag.put(TAG_POS, pos);
         return tag;
     }
 
@@ -50,10 +49,10 @@ public final class IntakeLocationFactory implements ILocationFactory<IntakeLocat
     @SuppressWarnings("removal") // ResourceLocation constructor deprecated in Forge 47.x, will migrate in 1.21
     public IntakeLocation deserialize(@NotNull IFactoryController controller, @NotNull CompoundTag compound) {
         ResourceLocation dimRL = new ResourceLocation(compound.getString(TAG_DIM));
-        ResourceKey dim = ResourceKey.create((ResourceKey) Registries.DIMENSION, (ResourceLocation) dimRL);
+        ResourceKey<Level> dim = ResourceKey.create(Registries.DIMENSION, dimRL);
         CompoundTag p = compound.getCompound(TAG_POS);
         BlockPos pos = new BlockPos(p.getInt("x"), p.getInt("y"), p.getInt("z"));
-        return new IntakeLocation((ResourceKey<Level>) dim, pos);
+        return new IntakeLocation(dim, pos);
     }
 
     public void serialize(@NotNull IFactoryController controller, @NotNull IntakeLocation output,
@@ -68,14 +67,14 @@ public final class IntakeLocationFactory implements ILocationFactory<IntakeLocat
     @NotNull
     public IntakeLocation deserialize(@NotNull IFactoryController controller, @NotNull FriendlyByteBuf buffer) {
         ResourceLocation dimRL = buffer.readResourceLocation();
-        ResourceKey dim = ResourceKey.create((ResourceKey) Registries.DIMENSION, (ResourceLocation) dimRL);
+        ResourceKey<Level> dim = ResourceKey.create(Registries.DIMENSION, dimRL);
         int x = buffer.readInt();
         int y = buffer.readInt();
         int z = buffer.readInt();
-        return new IntakeLocation((ResourceKey<Level>) dim, new BlockPos(x, y, z));
+        return new IntakeLocation(dim, new BlockPos(x, y, z));
     }
 
     public short getSerializationId() {
-        return 31011;
+        return SERIALIZATION_ID;
     }
 }

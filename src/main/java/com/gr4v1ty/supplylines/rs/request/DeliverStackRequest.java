@@ -30,9 +30,9 @@ public class DeliverStackRequest extends AbstractRequest<DeliverStack> {
 
     @NotNull
     public Component getShortDisplayString() {
-        DeliverStack ds = (DeliverStack) this.getRequest();
-        return Component.literal((String) String.format("Deliver %s x%d from %s to %s",
-                ds.getPayload().getStack().getDisplayName().getString(), ds.getCount(),
-                ds.getSource().getInDimensionLocation(), ds.getDest().getInDimensionLocation()));
+        DeliverStack ds = this.getRequest();
+        return Component.literal(
+                String.format("Deliver %s x%d from %s to %s", ds.getPayload().getStack().getDisplayName().getString(),
+                        ds.getCount(), ds.getSource().getInDimensionLocation(), ds.getDest().getInDimensionLocation()));
     }
 }

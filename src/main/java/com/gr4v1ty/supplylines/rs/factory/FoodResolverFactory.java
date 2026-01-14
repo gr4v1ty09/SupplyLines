@@ -60,6 +60,6 @@ public final class FoodResolverFactory implements IFactory<FactoryVoidInput, Foo
     }
 
     public short getSerializationId() {
-        return 31029;
+        return SERIALIZATION_ID;
     }
 }

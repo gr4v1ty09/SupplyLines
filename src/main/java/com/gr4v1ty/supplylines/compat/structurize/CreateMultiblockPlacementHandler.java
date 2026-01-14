@@ -3,6 +3,8 @@ package com.gr4v1ty.supplylines.compat.structurize;
 import com.ldtteam.structurize.placement.handlers.placement.IPlacementHandler;
 import com.ldtteam.structurize.placement.handlers.placement.PlacementHandlers;
 import com.ldtteam.structurize.util.PlacementSettings;
+import com.simibubi.create.content.decoration.girder.GirderBlock;
+import com.simibubi.create.content.decoration.girder.GirderEncasedShaftBlock;
 import com.simibubi.create.content.fluids.tank.FluidTankBlock;
 import com.simibubi.create.content.kinetics.belt.BeltBlock;
 import com.simibubi.create.content.logistics.vault.ItemVaultBlock;
@@ -38,7 +40,8 @@ public class CreateMultiblockPlacementHandler implements IPlacementHandler {
     public boolean canHandle(Level world, BlockPos pos, BlockState blockState) {
         Block block = blockState.getBlock();
         return block instanceof ItemVaultBlock || block instanceof BeltBlock || block instanceof FlapDisplayBlock
-                || block instanceof FluidTankBlock;
+                || block instanceof FluidTankBlock || block instanceof GirderBlock
+                || block instanceof GirderEncasedShaftBlock;
     }
 
     @Override
@@ -63,6 +66,17 @@ public class CreateMultiblockPlacementHandler implements IPlacementHandler {
         // Place the block in the world
         if (!world.setBlock(pos, blockState, UPDATE_FLAG)) {
             return ActionProcessingResult.DENY;
+        }
+
+        // For girders, recalculate state based on actual neighbors to fix visual
+        // connections.
+        // The blueprint saves exact state but neighbors may differ at the target
+        // location.
+        if (blockState.getBlock() instanceof GirderBlock || blockState.getBlock() instanceof GirderEncasedShaftBlock) {
+            BlockState updatedState = Block.updateFromNeighbourShapes(blockState, world, pos);
+            if (!updatedState.equals(blockState)) {
+                world.setBlock(pos, updatedState, UPDATE_FLAG);
+            }
         }
 
         // Handle tile entity data if present

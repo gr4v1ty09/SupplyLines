@@ -41,7 +41,7 @@ public final class DeliverStackFactory implements IFactory<FactoryVoidInput, Del
             throws Throwable {
         ILocation source = (ILocation) controller.deserialize(compound.getCompound(TAG_SOURCE));
         ILocation dest = (ILocation) controller.deserialize(compound.getCompound(TAG_DEST));
-        ItemStack itemStack = ItemStack.of((CompoundTag) compound.getCompound(TAG_STACK));
+        ItemStack itemStack = ItemStack.of(compound.getCompound(TAG_STACK));
         Stack payload = new Stack(itemStack);
         int count = compound.getInt(TAG_COUNT);
         UUID reservation = compound.contains(TAG_RESV) ? UUID.fromString(compound.getString(TAG_RESV)) : null;
@@ -108,6 +108,6 @@ public final class DeliverStackFactory implements IFactory<FactoryVoidInput, Del
     }
 
     public short getSerializationId() {
-        return 31001;
+        return SERIALIZATION_ID;
     }
 }

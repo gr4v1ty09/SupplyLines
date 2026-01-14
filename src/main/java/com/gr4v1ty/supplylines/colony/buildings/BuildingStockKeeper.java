@@ -1,22 +1,27 @@
 package com.gr4v1ty.supplylines.colony.buildings;
 
 import com.gr4v1ty.supplylines.colony.manager.NetworkIntegration;
-import com.gr4v1ty.supplylines.colony.manager.RackManager;
+import com.gr4v1ty.supplylines.colony.manager.BuildingBlockScanner;
 import com.gr4v1ty.supplylines.colony.manager.RequestHandler;
+import com.gr4v1ty.supplylines.colony.manager.RestockManager;
 import com.gr4v1ty.supplylines.colony.manager.SkillManager;
+import com.gr4v1ty.supplylines.colony.manager.migration.PanelMigrationManager;
+import com.gr4v1ty.supplylines.colony.manager.migration.TrainStationMigrationManager;
+import com.gr4v1ty.supplylines.colony.manager.migration.data.PanelMigrationData;
+import com.gr4v1ty.supplylines.colony.manager.migration.data.TrainStationMigrationData;
+import com.gr4v1ty.supplylines.colony.buildings.modules.RestockPolicyModule;
+import com.gr4v1ty.supplylines.colony.buildings.modules.SuppliersModule;
 import com.gr4v1ty.supplylines.util.ItemMatch;
 import com.gr4v1ty.supplylines.util.RequestTypes;
 import com.gr4v1ty.supplylines.util.inventory.InventoryOperations;
 import com.gr4v1ty.supplylines.util.inventory.InventorySignature;
-import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
+import com.minecolonies.api.colony.requestsystem.requestable.Burnable;
 import com.minecolonies.api.colony.requestsystem.requestable.Food;
 import com.minecolonies.api.colony.requestsystem.requestable.StackList;
 import com.minecolonies.api.colony.requestsystem.requestable.Tool;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
-import com.minecolonies.api.entity.citizen.Skill;
-import com.minecolonies.api.entity.citizen.citizenhandlers.ICitizenSkillHandler;
 import com.minecolonies.core.colony.buildings.AbstractBuilding;
 import com.minecolonies.core.colony.buildings.modules.WorkerBuildingModule;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
@@ -24,10 +29,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -41,10 +47,12 @@ import org.slf4j.LoggerFactory;
 
 public class BuildingStockKeeper extends AbstractBuilding {
     private static final Logger LOGGER = LoggerFactory.getLogger(BuildingStockKeeper.class);
-    private static final Random RANDOM = new Random();
 
     /** Building level required for stock ticker functionality */
     public static final int STOCK_TICKER_REQUIRED_LEVEL = 4;
+
+    /** Building level required for restock policy functionality */
+    public static final int RESTOCK_POLICY_REQUIRED_LEVEL = 5;
 
     /** Default interval for inventory signature refresh checks */
     private static final int DEFAULT_INV_SIG_INTERVAL_TICKS = 40;
@@ -54,34 +62,60 @@ public class BuildingStockKeeper extends AbstractBuilding {
     private static final int DEFAULT_RESCAN_INTERVAL_TICKS = 400;
     /** Default interval for stock snapshot updates when no skill manager */
     private static final int DEFAULT_STOCK_SNAPSHOT_INTERVAL_TICKS = 200;
+    /** Default interval for restock policy checks when no skill manager */
+    private static final int DEFAULT_RESTOCK_INTERVAL_TICKS = 600;
 
-    private final RackManager rackManager;
+    /** NBT tag for storing pending panel migration data. */
+    private static final String TAG_PENDING_MIGRATION = "pendingPanelMigration";
+
+    /** NBT tag for storing pending station migration data. */
+    private static final String TAG_PENDING_STATION_MIGRATION = "pendingStationMigration";
+
+    private final BuildingBlockScanner blockScanner;
     private final NetworkIntegration networkIntegration;
     private SkillManager skillManager;
     private final RequestHandler requestHandler;
+    private final RestockManager restockManager;
     private long lastInvSigTick = Long.MIN_VALUE;
     private long lastInvSig = Long.MIN_VALUE;
+
+    /** Cached panel migration data during upgrade. Persisted to NBT. */
+    @Nullable
+    private PanelMigrationData pendingMigration = null;
+
+    /** Cached station migration data during upgrade. Persisted to NBT. */
+    @Nullable
+    private TrainStationMigrationData pendingStationMigration = null;
 
     public Map<ItemMatch.ItemStackKey, Long> getStockGauges() {
         return this.networkIntegration.getStockGauges();
     }
 
+    /**
+     * Returns the NetworkIntegration for direct access to stock network operations.
+     * Prefer this over delegation methods for new code.
+     */
+    public NetworkIntegration getNetworkIntegration() {
+        return this.networkIntegration;
+    }
+
     public BuildingStockKeeper(IColony colony, BlockPos pos) {
         super(colony, pos);
-        this.rackManager = new RackManager(this);
+        this.blockScanner = new BuildingBlockScanner(this);
         this.networkIntegration = new NetworkIntegration(colony);
         this.requestHandler = new RequestHandler(colony, pos);
+        this.restockManager = new RestockManager(colony);
     }
 
     private void ensureRSRegistered(Level level) {
-        List<BlockPos> racks = this.rackManager.getRackPositions();
+        List<BlockPos> racks = this.blockScanner.getRackPositions();
         this.requestHandler.ensureRSRegistered(level, racks, this);
     }
 
     private void ensureSkillManagerInitialized() {
         WorkerBuildingModule workerModule;
-        if (this.skillManager == null && (workerModule = (WorkerBuildingModule) this
-                .getFirstModuleOccurance(WorkerBuildingModule.class)) != null) {
+        if (this.skillManager == null
+                && (workerModule = this.getFirstModuleOccurance(WorkerBuildingModule.class)) != null) {
             this.skillManager = new SkillManager(workerModule);
         }
     }
@@ -101,12 +135,12 @@ public class BuildingStockKeeper extends AbstractBuilding {
 
     @Nullable
     public BlockPos getSeatPos() {
-        return this.rackManager.getSeatPos();
+        return this.blockScanner.getSeatPos();
     }
 
     @Nullable
     public BlockPos getStockTickerPos() {
-        return this.rackManager.getStockTickerPos();
+        return this.blockScanner.getStockTickerPos();
     }
 
     @Nullable
@@ -120,12 +154,12 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (be == null) {
             return null;
         }
-        IItemHandler h = (IItemHandler) be.getCapability(ForgeCapabilities.ITEM_HANDLER, null).orElse(null);
+        IItemHandler h = be.getCapability(ForgeCapabilities.ITEM_HANDLER, null).orElse(null);
         if (InventoryOperations.canAccept(h, exemplar)) {
             return h;
         }
         for (Direction side : Direction.values()) {
-            face = (IItemHandler) be.getCapability(ForgeCapabilities.ITEM_HANDLER, side).orElse(null);
+            face = be.getCapability(ForgeCapabilities.ITEM_HANDLER, side).orElse(null);
             if (!InventoryOperations.canAccept(face, exemplar))
                 continue;
             return face;
@@ -134,7 +168,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
             return h;
         }
         for (Direction side : Direction.values()) {
-            face = (IItemHandler) be.getCapability(ForgeCapabilities.ITEM_HANDLER, side).orElse(null);
+            face = be.getCapability(ForgeCapabilities.ITEM_HANDLER, side).orElse(null);
             if (face == null)
                 continue;
             return face;
@@ -157,6 +191,26 @@ public class BuildingStockKeeper extends AbstractBuilding {
             this.updateStockSnapshotIfDue(level);
             this.processStagingRequestsIfDue(level);
         }
+        if (this.getBuildingLevel() >= RESTOCK_POLICY_REQUIRED_LEVEL && workerActive) {
+            this.processRestockPoliciesIfDue(level);
+        }
+    }
+
+    private void processRestockPoliciesIfDue(Level level) {
+        RestockPolicyModule policyModule = this.getFirstModuleOccurance(RestockPolicyModule.class);
+        SuppliersModule suppliersModule = this.getFirstModuleOccurance(SuppliersModule.class);
+
+        if (policyModule == null || suppliersModule == null) {
+            return;
+        }
+
+        this.ensureSkillManagerInitialized();
+        int interval = this.skillManager != null
+                ? this.skillManager.getRestockIntervalTicks()
+                : DEFAULT_RESTOCK_INTERVAL_TICKS;
+
+        this.restockManager.processRestockPoliciesIfDue(level, policyModule, suppliersModule, this.networkIntegration,
+                this.blockScanner.getDisplayBoardPos(), interval);
     }
 
     private void processStagingRequestsIfDue(Level level) {
@@ -164,35 +218,38 @@ public class BuildingStockKeeper extends AbstractBuilding {
         int interval = this.skillManager != null
                 ? this.skillManager.getStagingProcessIntervalTicks()
                 : DEFAULT_STAGING_PROCESS_INTERVAL_TICKS;
-        this.networkIntegration.processStagingRequestsIfDue(level, this.rackManager.getStockTickerPos(),
-                this.rackManager.getRackPositions(), interval, () -> this.refreshInventorySignatureIfDue(level));
+        this.networkIntegration.processStagingRequestsIfDue(level, this.blockScanner.getStockTickerPos(),
+                this.blockScanner.getRackPositions(), interval, () -> this.refreshInventorySignatureIfDue(level));
     }
 
     public void scanIfDue(Level level) {
-        IColony mcolony;
+
+        @SuppressWarnings("unused")
         boolean racksChanged;
+
+        IColony mcolony;
         this.ensureSkillManagerInitialized();
         int interval = this.skillManager != null
                 ? this.skillManager.getRescanIntervalTicks()
                 : DEFAULT_RESCAN_INTERVAL_TICKS;
-        if (this.rackManager.isScanDue(level, interval)
-                && (racksChanged = this.rackManager.rescan(level, this.getBuildingLevel()))
+        if (this.blockScanner.isScanDue(level, interval)
+                && (racksChanged = this.blockScanner.rescan(level, this.getBuildingLevel()))
                 && (mcolony = this.getColony()) != null) {
             try {
-                LOGGER.info("{} [DEBUG] scanIfDue: onColonyUpdate triggered (racksChanged=true)", LogTags.ORDERING);
+                LOGGER.debug("{} scanIfDue: onColonyUpdate triggered (racksChanged=true)", LogTags.ORDERING);
                 mcolony.getRequestManager().onColonyUpdate(req -> this.shouldReEvaluateRequest(req, null, "scanIfDue"));
             } catch (Exception e) {
-                LOGGER.error("{} [DEBUG] scanIfDue: onColonyUpdate threw", LogTags.ORDERING, e);
+                LOGGER.error("{} scanIfDue: onColonyUpdate threw", LogTags.ORDERING, e);
             }
         }
     }
 
     public boolean hasValidTargets(Level level) {
-        return this.rackManager.hasValidTargets(level);
+        return this.blockScanner.hasValidTargets(level);
     }
 
     public List<BlockPos> getRackPositions() {
-        return this.rackManager.getRackPositions();
+        return this.blockScanner.getRackPositions();
     }
 
     /**
@@ -291,7 +348,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
     }
 
     private long computeInventorySignature(Level level) {
-        List<BlockPos> racksToHash = this.rackManager.getRackPositions();
+        List<BlockPos> racksToHash = this.blockScanner.getRackPositions();
         IItemHandler staging = this.getStagingHandler(level);
         return InventorySignature.computeInventorySignature(level, racksToHash, staging, 0);
     }
@@ -307,7 +364,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
     }
 
     public boolean hasStockTicker() {
-        return this.getBuildingLevel() >= STOCK_TICKER_REQUIRED_LEVEL && this.rackManager.getStockTickerPos() != null;
+        return this.getBuildingLevel() >= STOCK_TICKER_REQUIRED_LEVEL && this.blockScanner.getStockTickerPos() != null;
     }
 
     public long getStockLevel(ItemStack item) {
@@ -315,7 +372,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
     }
 
     public boolean requestFromStockNetwork(ItemStack item, int quantity, IToken<?> requestId) {
-        if (this.rackManager.getStockTickerPos() == null) {
+        if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
         return this.networkIntegration.requestFromStockNetwork(item, quantity, requestId, this.getColony().getWorld());
@@ -326,7 +383,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
     }
 
     public boolean requestToolFromStockNetwork(Tool toolRequest, IToken<?> requestId) {
-        if (this.rackManager.getStockTickerPos() == null) {
+        if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
         return this.networkIntegration.requestToolFromStockNetwork(toolRequest, requestId, this.getColony().getWorld());
@@ -337,7 +394,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
     }
 
     public boolean requestFromStockNetworkByTag(TagKey<Item> tag, int quantity, IToken<?> requestId) {
-        if (this.rackManager.getStockTickerPos() == null) {
+        if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
         return this.networkIntegration.requestFromStockNetworkByTag(tag, quantity, requestId,
@@ -349,7 +406,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
     }
 
     public boolean requestFromStockNetworkByStackList(StackList stackList, IToken<?> requestId) {
-        if (this.rackManager.getStockTickerPos() == null) {
+        if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
         return this.networkIntegration.requestFromStockNetworkByStackList(stackList, requestId,
@@ -361,10 +418,22 @@ public class BuildingStockKeeper extends AbstractBuilding {
     }
 
     public boolean requestFromStockNetworkForFood(Food food, IToken<?> requestId) {
-        if (this.rackManager.getStockTickerPos() == null) {
+        if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
         return this.networkIntegration.requestFromStockNetworkForFood(food, requestId, this.getColony().getWorld());
+    }
+
+    public long getStockLevelForBurnable(Burnable burnable) {
+        return this.networkIntegration.getStockLevelForBurnable(burnable);
+    }
+
+    public boolean requestFromStockNetworkForBurnable(Burnable burnable, IToken<?> requestId) {
+        if (this.blockScanner.getStockTickerPos() == null) {
+            return false;
+        }
+        return this.networkIntegration.requestFromStockNetworkForBurnable(burnable, requestId,
+                this.getColony().getWorld());
     }
 
     private void updateStockSnapshotIfDue(Level level) {
@@ -372,7 +441,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         int interval = this.skillManager != null
                 ? this.skillManager.getStockSnapshotIntervalTicks()
                 : DEFAULT_STOCK_SNAPSHOT_INTERVAL_TICKS;
-        this.networkIntegration.updateStockSnapshotIfDue(level, this.rackManager.getStockTickerPos(), interval,
+        this.networkIntegration.updateStockSnapshotIfDue(level, this.blockScanner.getStockTickerPos(), interval,
                 () -> this.reassignPendingRequestsOnStockChange(level));
     }
 
@@ -404,26 +473,136 @@ public class BuildingStockKeeper extends AbstractBuilding {
     }
 
     public void awardWorkerSkillXP(double baseXp) {
-        if (baseXp <= 0.0) {
-            return;
+        this.ensureSkillManagerInitialized();
+        if (this.skillManager != null) {
+            this.skillManager.awardWorkerSkillXP(baseXp);
         }
-        WorkerBuildingModule worker = (WorkerBuildingModule) this.getFirstModuleOccurance(WorkerBuildingModule.class);
-        if (worker == null) {
-            return;
+    }
+
+    @Override
+    public void requestUpgrade(final Player player, final BlockPos builder) {
+        int currentLevel = this.getBuildingLevel();
+        int nextLevel = currentLevel + 1;
+
+        // Check if this is a 4->5 upgrade candidate
+        boolean isLevel4To5 = (currentLevel == STOCK_TICKER_REQUIRED_LEVEL
+                && nextLevel == RESTOCK_POLICY_REQUIRED_LEVEL);
+
+        // Check if work order already exists (would cause early return in
+        // requestWorkOrder)
+        boolean hadWorkOrder = this.hasWorkOrder();
+
+        // Call parent - may fail and return early
+        super.requestUpgrade(player, builder);
+
+        // Only scan if: it's 4->5, no prior work order, and now there IS a work order
+        if (isLevel4To5 && !hadWorkOrder && this.hasWorkOrder()) {
+            Level level = this.getColony().getWorld();
+            if (level != null && !level.isClientSide()) {
+                this.pendingMigration = PanelMigrationManager.scanAndExtractPanelData(level, this.getCorners(),
+                        currentLevel, nextLevel);
+                if (this.pendingMigration != null) {
+                    LOGGER.info("{} Upgrade to level 5 confirmed, cached {} panel configs", LogTags.MIGRATION,
+                            this.pendingMigration.getPanels().size());
+                    this.markDirty();
+                }
+            }
         }
-        List<ICitizenData> assignedCitizens = worker.getAssignedCitizen();
-        if (assignedCitizens.isEmpty()) {
-            return;
+
+        // Scan for station/postbox data on ANY upgrade (not just 4->5)
+        if (!hadWorkOrder && this.hasWorkOrder()) {
+            Level level = this.getColony().getWorld();
+            if (level != null && !level.isClientSide()) {
+                this.pendingStationMigration = TrainStationMigrationManager.scanAndExtractData(level, this.getCorners(),
+                        currentLevel, nextLevel);
+                if (this.pendingStationMigration != null) {
+                    LOGGER.info("{} Upgrade confirmed, cached {} station(s), {} postbox(es) for migration",
+                            LogTags.MIGRATION, this.pendingStationMigration.getStations().size(),
+                            this.pendingStationMigration.getPostboxes().size());
+                    this.markDirty();
+                }
+            }
         }
-        ICitizenData citizen = assignedCitizens.get(0);
-        if (citizen == null) {
-            return;
+    }
+
+    @Override
+    public void onUpgradeComplete(final int newLevel) {
+        super.onUpgradeComplete(newLevel);
+
+        // Check if we have pending migration data for this upgrade
+        if (newLevel == RESTOCK_POLICY_REQUIRED_LEVEL && this.pendingMigration != null) {
+            LOGGER.info("{} Upgrade to level {} complete, applying panel migration", LogTags.MIGRATION, newLevel);
+
+            RestockPolicyModule policyModule = this.getFirstModuleOccurance(RestockPolicyModule.class);
+            SuppliersModule suppliersModule = this.getFirstModuleOccurance(SuppliersModule.class);
+
+            if (policyModule != null && suppliersModule != null) {
+                int created = PanelMigrationManager.applyMigrationData(this.pendingMigration, policyModule,
+                        suppliersModule);
+                LOGGER.info("{} Applied {} policies from Factory Panel migration", LogTags.MIGRATION, created);
+            } else {
+                LOGGER.error("{} Cannot apply migration - modules not found!", LogTags.MIGRATION);
+            }
+
+            // Clear cached data
+            this.pendingMigration = null;
+            this.markDirty();
         }
-        ICitizenSkillHandler skillHandler = citizen.getCitizenSkillHandler();
-        if (skillHandler == null) {
-            return;
+
+        // Apply station migration (for any upgrade level)
+        if (this.pendingStationMigration != null) {
+            Level level = this.getColony().getWorld();
+            if (level != null && !level.isClientSide()) {
+                LOGGER.info("{} Upgrade to level {} complete, applying station migration", LogTags.MIGRATION, newLevel);
+
+                TrainStationMigrationManager.MigrationResult result = TrainStationMigrationManager
+                        .applyMigrationData(level, this.getCorners(), this.pendingStationMigration);
+
+                LOGGER.info("{} Station migration complete: {} stations, {} postboxes restored", LogTags.MIGRATION,
+                        result.stationsRestored, result.postboxesRestored);
+
+                for (String warning : result.warnings) {
+                    LOGGER.warn("{} {}", LogTags.MIGRATION, warning);
+                }
+            }
+
+            // Clear cached data
+            this.pendingStationMigration = null;
+            this.markDirty();
         }
-        Skill skill = RANDOM.nextBoolean() ? Skill.Strength : Skill.Dexterity;
-        skillHandler.addXpToSkill(skill, baseXp, citizen);
+    }
+
+    @Override
+    public void deserializeNBT(final CompoundTag compound) {
+        super.deserializeNBT(compound);
+
+        if (compound.contains(TAG_PENDING_MIGRATION)) {
+            this.pendingMigration = PanelMigrationData.fromNBT(compound.getCompound(TAG_PENDING_MIGRATION));
+            LOGGER.info("{} Restored pending migration data ({} panels)", LogTags.MIGRATION,
+                    this.pendingMigration.getPanels().size());
+        }
+
+        if (compound.contains(TAG_PENDING_STATION_MIGRATION)) {
+            this.pendingStationMigration = TrainStationMigrationData
+                    .fromNBT(compound.getCompound(TAG_PENDING_STATION_MIGRATION));
+            LOGGER.info("{} Restored pending station migration data ({} stations, {} postboxes)", LogTags.MIGRATION,
+                    this.pendingStationMigration.getStations().size(),
+                    this.pendingStationMigration.getPostboxes().size());
+        }
+    }
+
+    @Override
+    public CompoundTag serializeNBT() {
+        CompoundTag compound = super.serializeNBT();
+
+        if (this.pendingMigration != null) {
+            compound.put(TAG_PENDING_MIGRATION, this.pendingMigration.toNBT());
+        }
+
+        if (this.pendingStationMigration != null) {
+            compound.put(TAG_PENDING_STATION_MIGRATION, this.pendingStationMigration.toNBT());
+        }
+
+        return compound;
     }
 }

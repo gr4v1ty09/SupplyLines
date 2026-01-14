@@ -3,11 +3,13 @@ package com.gr4v1ty.supplylines.util.inventory;
 import com.gr4v1ty.supplylines.rs.location.RackLocation;
 import com.gr4v1ty.supplylines.rs.util.DeliveryPlanning;
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.requestsystem.requestable.Burnable;
 import com.minecolonies.api.colony.requestsystem.requestable.Food;
 import com.minecolonies.api.colony.requestsystem.requestable.RequestTag;
 import com.minecolonies.api.colony.requestsystem.requestable.Stack;
 import com.minecolonies.api.colony.requestsystem.requestable.StackList;
 import com.minecolonies.api.colony.requestsystem.requestable.Tool;
+import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -16,7 +18,6 @@ import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -69,6 +70,12 @@ public final class RackPicker {
     public static List<DeliveryPlanning.Pick> pickFoodFromRacks(Level level, IColony colony,
             List<BlockPos> rackPositions, Food wanted) {
         return pickGeneric(level, colony, rackPositions, wanted.getCount(), wanted::matches,
+                (inSlot, take) -> new Stack(inSlot, take, 1), false);
+    }
+
+    public static List<DeliveryPlanning.Pick> pickBurnableFromRacks(Level level, IColony colony,
+            List<BlockPos> rackPositions, Burnable wanted) {
+        return pickGeneric(level, colony, rackPositions, wanted.getCount(), FurnaceBlockEntity::isFuel,
                 (inSlot, take) -> new Stack(inSlot, take, 1), false);
     }
 
@@ -145,8 +152,7 @@ public final class RackPicker {
 
                     pickedSlots.add(slotKey);
 
-                    RackLocation sourceLoc = new RackLocation((ResourceKey<Level>) colony.getDimension(), rackPos, face,
-                            slot);
+                    RackLocation sourceLoc = new RackLocation(colony.getDimension(), rackPos, face, slot);
 
                     Stack payload = wrapperFactory.apply(inSlot, take);
                     picks.add(new DeliveryPlanning.Pick(sourceLoc, payload, take, null));

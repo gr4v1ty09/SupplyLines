@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "supplylines:block/stock_keeper_hut"
+    }
+  }
+}

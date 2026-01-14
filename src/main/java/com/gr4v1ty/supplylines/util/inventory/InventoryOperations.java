@@ -25,8 +25,8 @@ public final class InventoryOperations {
         if (be == null) {
             return null;
         }
-        LazyOptional cap = be.getCapability(ForgeCapabilities.ITEM_HANDLER, null);
-        return (IItemHandler) cap.orElse(null);
+        LazyOptional<IItemHandler> cap = be.getCapability(ForgeCapabilities.ITEM_HANDLER, null);
+        return cap.orElse(null);
     }
 
     public static List<IItemHandler> handlersAt(Level lvl, List<BlockPos> poses) {
@@ -48,16 +48,16 @@ public final class InventoryOperations {
         if (be == null) {
             return null;
         }
-        if (preferredFace != null && (handler = (IItemHandler) be
-                .getCapability(ForgeCapabilities.ITEM_HANDLER, preferredFace).orElse(null)) != null) {
+        if (preferredFace != null
+                && (handler = be.getCapability(ForgeCapabilities.ITEM_HANDLER, preferredFace).orElse(null)) != null) {
             return handler;
         }
-        handler = (IItemHandler) be.getCapability(ForgeCapabilities.ITEM_HANDLER, null).orElse(null);
+        handler = be.getCapability(ForgeCapabilities.ITEM_HANDLER, null).orElse(null);
         if (handler != null) {
             return handler;
         }
         for (Direction d : Direction.values()) {
-            handler = (IItemHandler) be.getCapability(ForgeCapabilities.ITEM_HANDLER, d).orElse(null);
+            handler = be.getCapability(ForgeCapabilities.ITEM_HANDLER, d).orElse(null);
             if (handler == null)
                 continue;
             return handler;
@@ -102,7 +102,10 @@ public final class InventoryOperations {
         for (IItemHandler h : sources) {
             for (int slot = 0; slot < h.getSlots() && remaining > 0; ++slot) {
                 ItemStack got;
+
+                @SuppressWarnings("unused")
                 int toTake;
+
                 ItemStack sim;
                 ItemStack s = h.getStackInSlot(slot);
                 if (s.isEmpty() || !matches.test(s, request)
@@ -130,7 +133,7 @@ public final class InventoryOperations {
         }
         ItemStack remaining = stack.copy();
         for (int i = 0; i < dst.getSlots() && !remaining.isEmpty(); ++i) {
-            remaining = ItemHandlerHelper.insertItem((IItemHandler) dst, (ItemStack) remaining, (boolean) false);
+            remaining = ItemHandlerHelper.insertItem(dst, remaining, false);
         }
         return remaining;
     }

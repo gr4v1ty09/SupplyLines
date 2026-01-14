@@ -5,7 +5,6 @@ import com.gr4v1ty.supplylines.colony.jobs.JobStockKeeper;
 import com.minecolonies.api.entity.ai.statemachine.AITarget;
 import com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState;
 import com.minecolonies.api.entity.ai.statemachine.states.IAIState;
-import com.minecolonies.api.entity.ai.statemachine.states.IState;
 import com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickingTransition;
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.core.entity.ai.workers.AbstractEntityAIInteract;
@@ -14,7 +13,6 @@ import java.util.List;
 import java.util.Random;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Marker;
 import net.minecraft.world.phys.AABB;
@@ -34,12 +32,12 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
     private BlockPos workTarget = null;
     private int tickCounter = 0;
     private final Random rnd = new Random();
-    private Entity currentSeat = null;
 
+    @SuppressWarnings({"unchecked"})
     public AIStockKeeper(JobStockKeeper job) {
         super(job);
         super.registerTargets(new TickingTransition[]{
-                new AITarget((IState) AIWorkerState.IDLE, this::idleProviderLoop, STATE_MACHINE_TICK_RATE)});
+                new AITarget<IAIState>(AIWorkerState.IDLE, this::idleProviderLoop, STATE_MACHINE_TICK_RATE)});
     }
 
     @Override
@@ -48,7 +46,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
     }
 
     private IAIState idleProviderLoop() {
-        AbstractEntityCitizen entity = (AbstractEntityCitizen) this.worker.getCitizenData().getEntity().get();
+        AbstractEntityCitizen entity = this.worker.getCitizenData().getEntity().get();
         BuildingStockKeeper hut = getOwnBuilding();
 
         if (hut != null) {
@@ -133,7 +131,6 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         if (!nearbySeats.isEmpty()) {
             seatEntity = nearbySeats.get(0);
             if (!seatEntity.getPassengers().isEmpty()) {
-                this.currentSeat = seatEntity;
                 return;
             }
         } else {
@@ -146,9 +143,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         marker.setPos(seatPos.getX() + 0.5, seatPos.getY() + 0.5, seatPos.getZ() + 0.5);
         this.world.addFreshEntity(marker);
 
-        if (marker.startRiding(seatEntity, true)) {
-            this.currentSeat = seatEntity;
-        } else {
+        if (!marker.startRiding(seatEntity, true)) {
             marker.discard();
         }
     }

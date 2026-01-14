@@ -22,4 +22,10 @@ public final class LogTags {
 
     /** Delivery verification, request completion */
     public static final String FULFILLMENT = "[Fulfillment]";
+
+    /** Automatic restocking from remote suppliers */
+    public static final String RESTOCK = "[Restock]";
+
+    /** Building upgrade data migration */
+    public static final String MIGRATION = "[Migration]";
 }

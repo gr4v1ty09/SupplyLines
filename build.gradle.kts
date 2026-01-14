@@ -74,6 +74,10 @@ java {
     withSourcesJar()
 }
 
+tasks.withType<JavaCompile> {
+    options.compilerArgs.addAll(listOf("-Xlint:all", "-Xlint:-processing"))
+}
+
 minecraft {
     mappings("official", mcVersion)
 
@@ -129,6 +133,10 @@ repositories {
         name = "Registrate"
         url = uri("https://maven.tterrag.com/")
     }
+    maven {
+        name = "CreateMod"
+        url = uri("https://maven.createmod.net")
+    }
 }
 
 val fg = project.extensions.getByType<net.minecraftforge.gradle.userdev.DependencyManagementExtension>()
@@ -140,11 +148,12 @@ dependencies {
     compileOnly(fg.deobf("com.ldtteam:minecolonies:1.20.1-1.1.1069-snapshot"))
     runtimeOnly(fg.deobf("com.ldtteam:minecolonies:1.20.1-1.1.1069-snapshot"))
 
-    // Structurize 1.20.1-1.0.784-snapshot (project 298744, file 7041348)
-    compileOnly(fg.deobf("curse.maven:structurize-298744:7041348"))
-    runtimeOnly(fg.deobf("curse.maven:structurize-298744:7041348"))
+    // Structurize 1.20.1-1.0.794 (from LDTTeam maven - needed for WindowSelectRes GUI class)
+    compileOnly(fg.deobf("com.ldtteam:structurize:1.20.1-1.0.794"))
+    runtimeOnly(fg.deobf("com.ldtteam:structurize:1.20.1-1.0.794"))
 
     // BlockUI 1.20.1-1.0.194 (project 522992, file 7041657)
+    compileOnly(fg.deobf("curse.maven:blockui-522992:7041657"))
     runtimeOnly(fg.deobf("curse.maven:blockui-522992:7041657"))
 
     // Domum Ornamentum 1.20.1-1.0.291-snapshot (project 527361, file 6870756)
@@ -156,11 +165,17 @@ dependencies {
     compileOnly(fg.deobf("curse.maven:create-328085:6641603"))
     runtimeOnly(fg.deobf("curse.maven:create-328085:6641603"))
 
+    // Ponder (required by Create for FlapDisplayBlockEntity hierarchy)
+    compileOnly("net.createmod.ponder:Ponder-Forge-1.20.1:1.0.92")
+
     // Registrate (required by Create) - only compileOnly, Create bundles it at runtime
     compileOnly(fg.deobf("com.tterrag.registrate:Registrate:MC1.20-1.3.3"))
 
     // Mixin annotation processor
     annotationProcessor("org.spongepowered:mixin:0.8.5:processor")
+
+    // JEI 15.20.0.129 for Forge 1.20.1 (project 238222, file 7391695)
+    runtimeOnly(fg.deobf("curse.maven:jei-238222:7391695"))
 }
 
 // Merge resources into classes directory for ForgeGradle

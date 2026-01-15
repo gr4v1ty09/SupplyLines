@@ -1,6 +1,7 @@
 # Build
 /build/
 **/build/
+bin/
 out/
 .gradle/
 

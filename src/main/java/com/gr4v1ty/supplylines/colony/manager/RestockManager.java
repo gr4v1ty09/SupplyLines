@@ -30,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Manages Level 5 automatic restocking from remote Create network suppliers.
@@ -92,6 +93,22 @@ public final class RestockManager {
         }
     }
 
+    /**
+     * Represents a pending restock request ready to be batched with others destined
+     * for the same supplier.
+     */
+    private static class PendingRestockRequest {
+        final ItemStack item;
+        final int quantity;
+        final SupplierEntry supplier;
+
+        PendingRestockRequest(ItemStack item, int quantity, SupplierEntry supplier) {
+            this.item = item.copy();
+            this.quantity = quantity;
+            this.supplier = supplier;
+        }
+    }
+
     public RestockManager(IColony colony) {
         this.colony = colony;
     }
@@ -137,7 +154,7 @@ public final class RestockManager {
         // Clean up expired/fulfilled orders
         cleanupExpiredOrders(now);
 
-        // Evaluate each policy
+        // Get policies and suppliers
         List<PolicyEntry> policies = policyModule.getPolicies();
         List<SupplierEntry> suppliers = suppliersModule.getSuppliers();
 
@@ -145,61 +162,25 @@ public final class RestockManager {
             return;
         }
 
-        for (PolicyEntry policy : policies) {
-            evaluateAndRestockPolicy(level, policy, suppliers, localNetwork, now);
+        // Phase 1: Collect all pending restock requests
+        List<PendingRestockRequest> pendingRequests = collectPendingRequests(policies, suppliers, localNetwork, now);
+
+        if (pendingRequests.isEmpty()) {
+            return;
+        }
+
+        // Phase 2: Group by supplier UUID
+        Map<UUID, List<PendingRestockRequest>> bySupplier = pendingRequests.stream()
+                .collect(Collectors.groupingBy(r -> r.supplier.getNetworkId()));
+
+        // Phase 3: Send one batched request per supplier
+        for (List<PendingRestockRequest> supplierRequests : bySupplier.values()) {
+            sendBatchedRequest(level, supplierRequests, now);
         }
     }
 
     private boolean shouldUpdateDisplay(long now) {
         return lastDisplayUpdateTick == Long.MIN_VALUE || now - lastDisplayUpdateTick >= DISPLAY_UPDATE_INTERVAL_TICKS;
-    }
-
-    /**
-     * Evaluates a single policy and requests items if deficit exists.
-     */
-    private void evaluateAndRestockPolicy(Level level, PolicyEntry policy, List<SupplierEntry> suppliers,
-            NetworkIntegration localNetwork, long now) {
-
-        ItemStack policyItem = policy.getItem().getItemStack();
-        int targetQuantity = policy.getTargetQuantity();
-
-        // Get current local stock level
-        long localStock = localNetwork.getStockLevel(policyItem);
-
-        // Calculate deficit
-        int deficit = targetQuantity - (int) Math.min(localStock, Integer.MAX_VALUE);
-        if (deficit <= 0) {
-            // Already at or above target, remove any active order for this item
-            activeOrders.remove(new ItemMatch.ItemStackKey(policyItem));
-            return;
-        }
-
-        // Skip if we already have an active order for this item
-        ItemMatch.ItemStackKey itemKey = new ItemMatch.ItemStackKey(policyItem);
-        if (activeOrders.containsKey(itemKey)) {
-            LOGGER.debug("{} Skipping restock for {} - order already in flight", LogTags.ORDERING,
-                    policyItem.getDisplayName().getString());
-            return;
-        }
-
-        // Find supplier with sufficient stock
-        SupplierResult result = findSupplierWithStock(policyItem, deficit, suppliers);
-        if (result == null) {
-            LOGGER.debug("{} No supplier found with {} x{}", LogTags.ORDERING, policyItem.getDisplayName().getString(),
-                    deficit);
-            return;
-        }
-
-        // Request from the supplier's Create network
-        boolean success = requestFromSupplier(level, result.supplier, policyItem, result.availableQuantity);
-        if (success) {
-            // Track order for display board
-            activeOrders.put(itemKey,
-                    new RestockOrder(policyItem, result.availableQuantity, now, result.supplier.getNetworkId()));
-            LOGGER.info("{} Requested {} x{} from supplier network {} (address: {})", LogTags.ORDERING,
-                    policyItem.getDisplayName().getString(), result.availableQuantity, result.supplier.getNetworkId(),
-                    result.supplier.getRequestAddress());
-        }
     }
 
     /**
@@ -269,6 +250,114 @@ public final class RestockManager {
     }
 
     /**
+     * Evaluates all policies and collects pending restock requests without sending
+     * them. This allows batching multiple items destined for the same supplier.
+     *
+     * @param policies
+     *            List of restock policies to evaluate
+     * @param suppliers
+     *            List of available suppliers
+     * @param localNetwork
+     *            Integration for querying local stock levels
+     * @param now
+     *            Current game tick
+     * @return List of pending requests ready to be batched by supplier
+     */
+    private List<PendingRestockRequest> collectPendingRequests(List<PolicyEntry> policies,
+            List<SupplierEntry> suppliers, NetworkIntegration localNetwork, long now) {
+
+        List<PendingRestockRequest> pendingRequests = new ArrayList<>();
+
+        for (PolicyEntry policy : policies) {
+            ItemStack policyItem = policy.getItem().getItemStack();
+            int targetQuantity = policy.getTargetQuantity();
+
+            // Get current local stock level
+            long localStock = localNetwork.getStockLevel(policyItem);
+
+            // Calculate deficit
+            int deficit = targetQuantity - (int) Math.min(localStock, Integer.MAX_VALUE);
+            if (deficit <= 0) {
+                // Already at or above target, remove any active order for this item
+                activeOrders.remove(new ItemMatch.ItemStackKey(policyItem));
+                continue;
+            }
+
+            // Skip if we already have an active order for this item
+            ItemMatch.ItemStackKey itemKey = new ItemMatch.ItemStackKey(policyItem);
+            if (activeOrders.containsKey(itemKey)) {
+                LOGGER.debug("{} Skipping restock for {} - order already in flight", LogTags.ORDERING,
+                        policyItem.getDisplayName().getString());
+                continue;
+            }
+
+            // Find supplier with sufficient stock
+            SupplierResult result = findSupplierWithStock(policyItem, deficit, suppliers);
+            if (result == null) {
+                LOGGER.debug("{} No supplier found with {} x{}", LogTags.ORDERING,
+                        policyItem.getDisplayName().getString(), deficit);
+                continue;
+            }
+
+            // Add to pending list (don't send yet)
+            pendingRequests.add(new PendingRestockRequest(policyItem, result.availableQuantity, result.supplier));
+        }
+
+        return pendingRequests;
+    }
+
+    /**
+     * Sends a batched request for multiple items to a single supplier.
+     *
+     * @param level
+     *            The world
+     * @param requests
+     *            List of pending requests (all for same supplier)
+     * @param now
+     *            Current game tick for tracking
+     */
+    private void sendBatchedRequest(Level level, List<PendingRestockRequest> requests, long now) {
+        if (requests.isEmpty()) {
+            return;
+        }
+
+        SupplierEntry supplier = requests.get(0).supplier;
+
+        try {
+            // Build combined item list
+            List<BigItemStack> orderedStacks = new ArrayList<>();
+            for (PendingRestockRequest req : requests) {
+                orderedStacks.add(new BigItemStack(req.item.copy(), req.quantity));
+            }
+
+            PackageOrderWithCrafts order = PackageOrderWithCrafts.simple(orderedStacks);
+            String destinationAddress = supplier.getRequestAddress();
+
+            boolean success = LogisticsManager.broadcastPackageRequest(supplier.getNetworkId(),
+                    LogisticallyLinkedBehaviour.RequestType.RESTOCK, order, null, destinationAddress);
+
+            if (success) {
+                // Track individual items for display board
+                for (PendingRestockRequest req : requests) {
+                    ItemMatch.ItemStackKey itemKey = new ItemMatch.ItemStackKey(req.item);
+                    activeOrders.put(itemKey, new RestockOrder(req.item, req.quantity, now, supplier.getNetworkId()));
+                }
+
+                // Log batched request
+                LOGGER.info("{} Batched {} item type(s) to supplier network {} (address: {}): {}", LogTags.ORDERING,
+                        requests.size(), supplier.getNetworkId(), destinationAddress,
+                        requests.stream().map(r -> r.item.getDisplayName().getString() + " x" + r.quantity)
+                                .collect(Collectors.joining(", ")));
+            } else {
+                LOGGER.warn("{} Failed to broadcast batched restock request to network {} (address: {})",
+                        LogTags.DISPATCH, supplier.getNetworkId(), destinationAddress);
+            }
+        } catch (Exception e) {
+            LOGGER.error("{} Exception broadcasting batched restock request", LogTags.DISPATCH, e);
+        }
+    }
+
+    /**
      * Sends a package request to a remote Create network.
      *
      * @param level
@@ -281,6 +370,7 @@ public final class RestockManager {
      *            The quantity to request
      * @return true if broadcast was successful
      */
+    @SuppressWarnings("unused")
     private boolean requestFromSupplier(Level level, SupplierEntry supplier, ItemStack item, int quantity) {
 
         try {

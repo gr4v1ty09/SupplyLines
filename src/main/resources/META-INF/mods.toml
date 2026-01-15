@@ -73,11 +73,11 @@ versionRange="[6.0.6,)"
 ordering="NONE"
 side="BOTH"
 
-# --- MineColonies (broad range; we're not linking to code yet) ---
+# --- MineColonies (requires 1.1.1161+ due to AbstractModuleWindow and isPendingConstruction() API changes) ---
 [[dependencies.supplylines]]
 modId="minecolonies"
 mandatory=true
-versionRange="[1.1.1069,)"
+versionRange="[1.1.1161,)"
 ordering="NONE"
 side="BOTH"
 

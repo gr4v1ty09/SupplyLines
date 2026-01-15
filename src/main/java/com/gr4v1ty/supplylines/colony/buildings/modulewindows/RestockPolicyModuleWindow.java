@@ -17,15 +17,17 @@ import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.crafting.ItemStorage;
 import com.minecolonies.core.client.gui.AbstractModuleWindow;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 /**
  * Window for managing restock policies in the Stock Keeper hut. Allows defining
  * which items should be kept stocked and their target quantities.
  */
-public class RestockPolicyModuleWindow extends AbstractModuleWindow {
+public class RestockPolicyModuleWindow extends AbstractModuleWindow<RestockPolicyModuleView> {
     /** Resource path for the layout. */
-    private static final String RESOURCE = SupplyLines.MOD_ID + ":gui/layouthuts/layoutrestockpolicy.xml";
+    private static final ResourceLocation RESOURCE = new ResourceLocation(SupplyLines.MOD_ID,
+            "gui/layouthuts/layoutrestockpolicy.xml");
 
     /** Label for when the policy limit is reached. */
     private static final String LABEL_LIMIT_REACHED = "com.supplylines.gui.stockkeeper.restockpolicy.limitreached";
@@ -51,9 +53,6 @@ public class RestockPolicyModuleWindow extends AbstractModuleWindow {
     /** Button ID for removing a policy. */
     private static final String BUTTON_REMOVE = "remove";
 
-    /** The module view. */
-    private final RestockPolicyModuleView moduleView;
-
     /** The scrolling list of policies. */
     private final ScrollingList policyList;
 
@@ -64,8 +63,7 @@ public class RestockPolicyModuleWindow extends AbstractModuleWindow {
      *            the module view.
      */
     public RestockPolicyModuleWindow(final RestockPolicyModuleView moduleView) {
-        super(moduleView.getBuildingView(), RESOURCE);
-        this.moduleView = moduleView;
+        super(moduleView, RESOURCE);
 
         policyList = findPaneOfTypeByID(LIST_POLICIES, ScrollingList.class);
 

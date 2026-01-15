@@ -144,9 +144,10 @@ val fg = project.extensions.getByType<net.minecraftforge.gradle.userdev.Dependen
 dependencies {
     minecraft("net.minecraftforge:forge:${mcVersion}-${forgeVersion}")
 
-    // MineColonies 1.20.1-1.1.1069-snapshot (from LDTTeam maven)
-    compileOnly(fg.deobf("com.ldtteam:minecolonies:1.20.1-1.1.1069-snapshot"))
-    runtimeOnly(fg.deobf("com.ldtteam:minecolonies:1.20.1-1.1.1069-snapshot"))
+    // MineColonies 1.20.1-1.1.1161-snapshot (from LDTTeam maven)
+    // Minimum compatible version: 1.1.1161 (AbstractModuleWindow and isPendingConstruction() API changes)
+    compileOnly(fg.deobf("com.ldtteam:minecolonies:1.20.1-1.1.1161-snapshot"))
+    runtimeOnly(fg.deobf("com.ldtteam:minecolonies:1.20.1-1.1.1161-snapshot"))
 
     // Structurize 1.20.1-1.0.794 (from LDTTeam maven - needed for WindowSelectRes GUI class)
     compileOnly(fg.deobf("com.ldtteam:structurize:1.20.1-1.0.794"))

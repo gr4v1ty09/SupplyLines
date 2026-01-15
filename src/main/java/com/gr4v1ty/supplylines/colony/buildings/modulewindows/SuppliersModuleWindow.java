@@ -17,6 +17,7 @@ import com.ldtteam.blockui.controls.TextField;
 import com.ldtteam.blockui.views.ScrollingList;
 import com.minecolonies.core.client.gui.AbstractModuleWindow;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.UUID;
 
@@ -24,9 +25,10 @@ import java.util.UUID;
  * Window for managing supplier networks in the Stock Keeper hut. Allows
  * adding/removing remote Create stock networks and setting priorities.
  */
-public class SuppliersModuleWindow extends AbstractModuleWindow {
+public class SuppliersModuleWindow extends AbstractModuleWindow<SuppliersModuleView> {
     /** Resource path for the layout. */
-    private static final String RESOURCE = SupplyLines.MOD_ID + ":gui/layouthuts/layoutsuppliers.xml";
+    private static final ResourceLocation RESOURCE = new ResourceLocation(SupplyLines.MOD_ID,
+            "gui/layouthuts/layoutsuppliers.xml");
 
     /** Resource ID for the scrolling list of suppliers. */
     private static final String LIST_SUPPLIERS = "suppliers";
@@ -58,9 +60,6 @@ public class SuppliersModuleWindow extends AbstractModuleWindow {
     /** Button ID for moving supplier down in priority. */
     private static final String BUTTON_DOWN = "down";
 
-    /** The module view. */
-    private final SuppliersModuleView moduleView;
-
     /** The scrolling list of suppliers. */
     private final ScrollingList supplierList;
 
@@ -71,8 +70,7 @@ public class SuppliersModuleWindow extends AbstractModuleWindow {
      *            the module view.
      */
     public SuppliersModuleWindow(final SuppliersModuleView moduleView) {
-        super(moduleView.getBuildingView(), RESOURCE);
-        this.moduleView = moduleView;
+        super(moduleView, RESOURCE);
 
         supplierList = findPaneOfTypeByID(LIST_SUPPLIERS, ScrollingList.class);
 

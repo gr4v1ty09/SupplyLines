@@ -4,10 +4,12 @@ import com.gr4v1ty.supplylines.colony.buildings.modules.RestockPolicyModule;
 import com.ldtteam.blockui.views.BOWindow;
 import com.minecolonies.api.colony.buildings.modules.AbstractBuildingModuleView;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,8 +61,9 @@ public class RestockPolicyModuleView extends AbstractBuildingModuleView {
     }
 
     @Override
-    public String getDesc() {
-        return "com.supplylines.gui.stockkeeper.restockpolicy";
+    @Nullable
+    public Component getDesc() {
+        return Component.translatable("com.supplylines.gui.stockkeeper.restockpolicy");
     }
 
     /**

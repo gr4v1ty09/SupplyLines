@@ -490,13 +490,13 @@ public class BuildingStockKeeper extends AbstractBuilding {
 
         // Check if work order already exists (would cause early return in
         // requestWorkOrder)
-        boolean hadWorkOrder = this.hasWorkOrder();
+        boolean wasPendingConstruction = this.isPendingConstruction();
 
         // Call parent - may fail and return early
         super.requestUpgrade(player, builder);
 
         // Only scan if: it's 4->5, no prior work order, and now there IS a work order
-        if (isLevel4To5 && !hadWorkOrder && this.hasWorkOrder()) {
+        if (isLevel4To5 && !wasPendingConstruction && this.isPendingConstruction()) {
             Level level = this.getColony().getWorld();
             if (level != null && !level.isClientSide()) {
                 this.pendingMigration = PanelMigrationManager.scanAndExtractPanelData(level, this.getCorners(),
@@ -510,7 +510,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         }
 
         // Scan for station/postbox data on ANY upgrade (not just 4->5)
-        if (!hadWorkOrder && this.hasWorkOrder()) {
+        if (!wasPendingConstruction && this.isPendingConstruction()) {
             Level level = this.getColony().getWorld();
             if (level != null && !level.isClientSide()) {
                 this.pendingStationMigration = TrainStationMigrationManager.scanAndExtractData(level, this.getCorners(),

@@ -87,6 +87,9 @@ public class BuildingStockKeeper extends AbstractBuilding {
     @Nullable
     private TrainStationMigrationData pendingStationMigration = null;
 
+    /** Flag to trigger worker patrol after order placement. */
+    private boolean patrolRequested = false;
+
     public Map<ItemMatch.ItemStackKey, Long> getStockGauges() {
         return this.networkIntegration.getStockGauges();
     }
@@ -141,6 +144,35 @@ public class BuildingStockKeeper extends AbstractBuilding {
     @Nullable
     public BlockPos getStockTickerPos() {
         return this.blockScanner.getStockTickerPos();
+    }
+
+    @Nullable
+    public BlockPos getDisplayBoardPos() {
+        return this.blockScanner.getDisplayBoardPos();
+    }
+
+    public List<BlockPos> getBeltPositions() {
+        return this.blockScanner.getBeltPositions();
+    }
+
+    /**
+     * Requests a patrol to verify orders. Called when stock network orders are
+     * placed. Multiple calls before patrol starts result in a single patrol
+     * (idempotent).
+     */
+    public void requestPatrol() {
+        LOGGER.debug("{} [SK] requestPatrol() called", LogTags.INVENTORY);
+        this.patrolRequested = true;
+    }
+
+    /**
+     * Consumes the patrol request flag. Returns true if patrol was requested, and
+     * resets the flag to false.
+     */
+    public boolean consumePatrolRequest() {
+        boolean result = this.patrolRequested;
+        this.patrolRequested = false;
+        return result;
     }
 
     @Nullable
@@ -375,7 +407,12 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
-        return this.networkIntegration.requestFromStockNetwork(item, quantity, requestId, this.getColony().getWorld());
+        boolean result = this.networkIntegration.requestFromStockNetwork(item, quantity, requestId,
+                this.getColony().getWorld());
+        if (result) {
+            this.requestPatrol();
+        }
+        return result;
     }
 
     public boolean hasMatchingToolInNetwork(Tool toolRequest) {
@@ -386,7 +423,12 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
-        return this.networkIntegration.requestToolFromStockNetwork(toolRequest, requestId, this.getColony().getWorld());
+        boolean result = this.networkIntegration.requestToolFromStockNetwork(toolRequest, requestId,
+                this.getColony().getWorld());
+        if (result) {
+            this.requestPatrol();
+        }
+        return result;
     }
 
     public long getStockLevelForTag(TagKey<Item> tag) {
@@ -397,8 +439,12 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
-        return this.networkIntegration.requestFromStockNetworkByTag(tag, quantity, requestId,
+        boolean result = this.networkIntegration.requestFromStockNetworkByTag(tag, quantity, requestId,
                 this.getColony().getWorld());
+        if (result) {
+            this.requestPatrol();
+        }
+        return result;
     }
 
     public long getStockLevelForStackList(StackList stackList) {
@@ -409,8 +455,12 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
-        return this.networkIntegration.requestFromStockNetworkByStackList(stackList, requestId,
+        boolean result = this.networkIntegration.requestFromStockNetworkByStackList(stackList, requestId,
                 this.getColony().getWorld());
+        if (result) {
+            this.requestPatrol();
+        }
+        return result;
     }
 
     public long getStockLevelForFood(Food food) {
@@ -421,7 +471,12 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
-        return this.networkIntegration.requestFromStockNetworkForFood(food, requestId, this.getColony().getWorld());
+        boolean result = this.networkIntegration.requestFromStockNetworkForFood(food, requestId,
+                this.getColony().getWorld());
+        if (result) {
+            this.requestPatrol();
+        }
+        return result;
     }
 
     public long getStockLevelForBurnable(Burnable burnable) {
@@ -432,8 +487,12 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (this.blockScanner.getStockTickerPos() == null) {
             return false;
         }
-        return this.networkIntegration.requestFromStockNetworkForBurnable(burnable, requestId,
+        boolean result = this.networkIntegration.requestFromStockNetworkForBurnable(burnable, requestId,
                 this.getColony().getWorld());
+        if (result) {
+            this.requestPatrol();
+        }
+        return result;
     }
 
     private void updateStockSnapshotIfDue(Level level) {

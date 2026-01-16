@@ -9,9 +9,12 @@ import com.minecolonies.api.entity.ai.statemachine.tickratestatemachine.TickingT
 import com.minecolonies.api.entity.citizen.AbstractEntityCitizen;
 import com.minecolonies.core.entity.ai.workers.AbstractEntityAIInteract;
 import com.simibubi.create.content.contraptions.actors.seat.SeatEntity;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import net.minecraft.core.BlockPos;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Marker;
@@ -19,18 +22,26 @@ import net.minecraft.world.phys.AABB;
 
 public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, BuildingStockKeeper> {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(AIStockKeeper.class);
     private static final int STATE_MACHINE_TICK_RATE = 20;
     private static final double WALK_SPEED = 1.0;
     private static final double ARRIVE_DISTANCE_SQ = 4.0;
     private static final int STOCK_TICKER_LEVEL = 4;
+    private static final int INSPECT_DURATION_TICKS = 4; // ~4 seconds (state machine ticks at 20 game ticks)
 
     private enum Phase {
-        WALKING, WORKING
+        WALKING, // Walking to main work target
+        WORKING, // Main work at stock ticker
+        PATROLLING, // Walking to a point of interest
+        INSPECTING // Brief pause at point of interest
     }
 
     private Phase phase = Phase.WALKING;
     private BlockPos workTarget = null;
+    private BlockPos patrolTarget = null;
     private int tickCounter = 0;
+    private int inspectTicks = 0;
+    private int patrolIndex = 0;
     private final Random rnd = new Random();
 
     @SuppressWarnings({"unchecked"})
@@ -76,13 +87,8 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
 
             case WORKING :
                 // Check if we drifted too far (e.g., after sleeping)
-                if (workTarget != null) {
-                    double workDistSq = entity.distanceToSqr(workTarget.getX() + 0.5, workTarget.getY() + 0.5,
-                            workTarget.getZ() + 0.5);
-                    if (workDistSq > ARRIVE_DISTANCE_SQ * 4) {
-                        phase = Phase.WALKING;
-                        break;
-                    }
+                if (checkDriftAndReset(entity, workTarget)) {
+                    break;
                 }
 
                 // Ensure seat occupied for stock ticker (level 4+)
@@ -104,10 +110,145 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                     entity.swing(InteractionHand.MAIN_HAND, true);
                 }
 
+                // Check if patrol requested (triggered by order placement)
+                if (hut != null && hut.consumePatrolRequest()) {
+                    LOGGER.debug("[SK-AI] Patrol requested, selecting patrol point");
+                    BlockPos nextPatrol = selectNextPatrolPoint(hut, entity.blockPosition());
+                    if (nextPatrol != null) {
+                        LOGGER.debug("[SK-AI] Starting patrol to {}", nextPatrol);
+                        patrolTarget = nextPatrol;
+                        phase = Phase.PATROLLING;
+                        break;
+                    } else {
+                        LOGGER.debug("[SK-AI] No valid patrol point found");
+                    }
+                }
+
                 tickCounter++;
+                break;
+
+            case PATROLLING :
+                if (patrolTarget == null) {
+                    resetToWalking();
+                    break;
+                }
+
+                double patrolDistSq = entity.distanceToSqr(patrolTarget.getX() + 0.5, patrolTarget.getY() + 0.5,
+                        patrolTarget.getZ() + 0.5);
+
+                if (patrolDistSq <= ARRIVE_DISTANCE_SQ) {
+                    LOGGER.debug("[SK-AI] Arrived at patrol target, starting inspection");
+                    entity.getNavigation().stop();
+                    phase = Phase.INSPECTING;
+                    inspectTicks = 0;
+                } else {
+                    // Navigate to belt level (not on top of it)
+                    entity.getNavigation().moveTo(patrolTarget.getX() + 0.5, patrolTarget.getY(),
+                            patrolTarget.getZ() + 0.5, WALK_SPEED);
+                }
+                break;
+
+            case INSPECTING :
+                // Check if we drifted too far (e.g., after sleeping)
+                if (checkDriftAndReset(entity, patrolTarget)) {
+                    break;
+                }
+
+                // Look at patrol target
+                if (patrolTarget != null && inspectTicks % 20 == 0) {
+                    entity.getLookControl().setLookAt(patrolTarget.getX() + 0.5, patrolTarget.getY() + 0.5,
+                            patrolTarget.getZ() + 0.5);
+                }
+
+                // Arm swing animation while inspecting
+                if (inspectTicks % 40 == 0 && rnd.nextBoolean()) {
+                    entity.swing(InteractionHand.MAIN_HAND, true);
+                }
+
+                inspectTicks++;
+
+                // Done inspecting, return to main work position
+                if (inspectTicks >= INSPECT_DURATION_TICKS) {
+                    LOGGER.debug("[SK-AI] Inspection complete, returning to work");
+                    resetToWalking();
+                }
                 break;
         }
         return null;
+    }
+
+    /**
+     * Checks if the worker has drifted too far from the target (e.g., after
+     * sleeping). If so, resets state and returns true.
+     */
+    private boolean checkDriftAndReset(AbstractEntityCitizen entity, BlockPos target) {
+        if (target == null) {
+            return false;
+        }
+        double distSq = entity.distanceToSqr(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
+        if (distSq > ARRIVE_DISTANCE_SQ * 4) {
+            resetToWalking();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Resets state to walk back to main work position.
+     */
+    private void resetToWalking() {
+        patrolTarget = null;
+        workTarget = null;
+        phase = Phase.WALKING;
+    }
+
+    /**
+     * Selects the next patrol point from available points of interest. Prioritizes
+     * belt positions for order verification.
+     */
+    private BlockPos selectNextPatrolPoint(BuildingStockKeeper hut, BlockPos currentPos) {
+        if (hut == null) {
+            return null;
+        }
+
+        List<BlockPos> candidates = new ArrayList<>();
+
+        // Add belt positions (primary target for order verification)
+        List<BlockPos> belts = hut.getBeltPositions();
+        LOGGER.debug("[SK-AI] Belt positions: {}", belts.size());
+        candidates.addAll(belts);
+
+        // Add a random rack position as fallback
+        List<BlockPos> racks = hut.getRackPositions();
+        LOGGER.debug("[SK-AI] Rack positions: {}", racks.size());
+        if (!racks.isEmpty()) {
+            candidates.add(racks.get(rnd.nextInt(racks.size())));
+        }
+
+        if (candidates.isEmpty()) {
+            LOGGER.debug("[SK-AI] No candidates at all");
+            return null;
+        }
+
+        // Filter out positions too close to current position
+        List<BlockPos> validCandidates = new ArrayList<>();
+        for (BlockPos pos : candidates) {
+            double distSq = currentPos.distSqr(pos);
+            if (distSq > ARRIVE_DISTANCE_SQ * 2) {
+                validCandidates.add(pos);
+            } else {
+                LOGGER.debug("[SK-AI] Filtered out {} (too close, distSq={})", pos, distSq);
+            }
+        }
+
+        if (validCandidates.isEmpty()) {
+            LOGGER.debug("[SK-AI] All candidates filtered out");
+            return null;
+        }
+
+        // Cycle through candidates
+        patrolIndex = (patrolIndex + 1) % validCandidates.size();
+        return validCandidates.get(patrolIndex);
     }
 
     private BlockPos getWorkTarget(BuildingStockKeeper hut) {

@@ -28,6 +28,7 @@ public final class BuildingBlockScanner {
     @Nullable
     private final Block rackBlock = ForgeRegistries.BLOCKS.getValue(RACK_ID);
     private final List<BlockPos> rackPositions = new ArrayList<BlockPos>();
+    private final List<BlockPos> beltPositions = new ArrayList<BlockPos>();
     private BlockPos stockTickerPos;
     private BlockPos seatPos;
     private BlockPos displayBoardPos;
@@ -52,6 +53,8 @@ public final class BuildingBlockScanner {
             this.seatPos = this.findNearestSeat(level);
             this.displayBoardPos = this.findNearestBlock(level, this.building.getPosition(), AUXILIARY_SCAN_RADIUS,
                     (Block) AllBlocks.DISPLAY_BOARD.get());
+            this.beltPositions.clear();
+            this.beltPositions.addAll(this.scanBelts(level));
         }
         boolean changed = !prevRacks.equals(new HashSet<BlockPos>(this.rackPositions));
         return changed;
@@ -83,6 +86,10 @@ public final class BuildingBlockScanner {
     @Nullable
     public BlockPos getDisplayBoardPos() {
         return this.displayBoardPos;
+    }
+
+    public List<BlockPos> getBeltPositions() {
+        return Collections.unmodifiableList(this.beltPositions);
     }
 
     /**
@@ -151,5 +158,50 @@ public final class BuildingBlockScanner {
             }
         }
         return null;
+    }
+
+    /**
+     * Scans for Create belt blocks within building bounds. Returns a subset of belt
+     * positions to use as patrol points (not every belt block, just representative
+     * ones).
+     */
+    private List<BlockPos> scanBelts(Level level) {
+        if (level == null || this.building == null) {
+            return List.of();
+        }
+        Block beltBlock;
+        try {
+            beltBlock = (Block) AllBlocks.BELT.get();
+        } catch (Exception e) {
+            LOGGER.debug("{} Belt block not available: {}", LogTags.INVENTORY, e.getMessage());
+            return List.of();
+        }
+        if (beltBlock == null) {
+            return List.of();
+        }
+
+        ArrayList<BlockPos> belts = new ArrayList<>();
+        BlockPos center = this.building.getPosition();
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        int r = AUXILIARY_SCAN_RADIUS;
+
+        for (int dx = -r; dx <= r; ++dx) {
+            for (int dy = -2; dy <= 6; ++dy) {
+                for (int dz = -r; dz <= r; ++dz) {
+                    m.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
+                    BlockState state = level.getBlockState(m);
+                    if (state.is(beltBlock)) {
+                        belts.add(m.immutable());
+                    }
+                }
+            }
+        }
+
+        // Deduplicate to just a few representative positions (every 4th belt found)
+        ArrayList<BlockPos> representative = new ArrayList<>();
+        for (int i = 0; i < belts.size(); i += 4) {
+            representative.add(belts.get(i));
+        }
+        return representative;
     }
 }

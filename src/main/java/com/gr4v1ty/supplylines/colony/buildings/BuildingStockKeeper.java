@@ -115,6 +115,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         this.requestHandler.ensureRSRegistered(level, racks, this);
     }
 
+    @SuppressWarnings("deprecation")
     private void ensureSkillManagerInitialized() {
         WorkerBuildingModule workerModule;
         if (this.skillManager == null
@@ -228,6 +229,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         }
     }
 
+    @SuppressWarnings("deprecation")
     private void processRestockPoliciesIfDue(Level level) {
         RestockPolicyModule policyModule = this.getFirstModuleOccurance(RestockPolicyModule.class);
         SuppliersModule suppliersModule = this.getFirstModuleOccurance(SuppliersModule.class);
@@ -584,6 +586,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         }
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     public void onUpgradeComplete(final int newLevel) {
         super.onUpgradeComplete(newLevel);

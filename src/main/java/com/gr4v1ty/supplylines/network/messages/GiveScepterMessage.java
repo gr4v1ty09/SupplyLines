@@ -9,7 +9,6 @@ import com.minecolonies.api.util.InventoryUtils;
 import com.minecolonies.core.network.messages.server.AbstractBuildingServerMessage;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.NetworkEvent;
 
 /**
@@ -58,7 +57,7 @@ public class GiveScepterMessage extends AbstractBuildingServerMessage<IBuilding>
         }
 
         // Create the configured scepter and add to player's hotbar
-        final ItemStack scepter = InventoryUtils.getOrCreateItemAndPutToHotbarAndSelectOrDrop(
+        InventoryUtils.getOrCreateItemAndPutToHotbarAndSelectOrDrop(
                 ModItems.SCEPTER_STOCKKEEPER.get(), player,
                 () -> ItemScepterStockKeeper.createConfiguredScepter(colony.getID(), building.getID()), true);
 

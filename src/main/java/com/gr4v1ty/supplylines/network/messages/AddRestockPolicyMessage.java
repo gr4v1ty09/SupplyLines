@@ -55,6 +55,7 @@ public class AddRestockPolicyMessage extends AbstractBuildingServerMessage<IBuil
         buf.writeInt(quantity);
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     protected void onExecute(final NetworkEvent.Context ctx, final boolean isLogicalServer, final IColony colony,
             final IBuilding building) {

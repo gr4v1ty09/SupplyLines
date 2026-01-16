@@ -26,6 +26,7 @@ import net.minecraft.world.item.ItemStack;
  */
 public class RestockPolicyModuleWindow extends AbstractModuleWindow<RestockPolicyModuleView> {
     /** Resource path for the layout. */
+    @SuppressWarnings("removal")
     private static final ResourceLocation RESOURCE = new ResourceLocation(SupplyLines.MOD_ID,
             "gui/layouthuts/layoutrestockpolicy.xml");
 

@@ -27,6 +27,7 @@ import java.util.UUID;
  */
 public class SuppliersModuleWindow extends AbstractModuleWindow<SuppliersModuleView> {
     /** Resource path for the layout. */
+    @SuppressWarnings("removal")
     private static final ResourceLocation RESOURCE = new ResourceLocation(SupplyLines.MOD_ID,
             "gui/layouthuts/layoutsuppliers.xml");
 

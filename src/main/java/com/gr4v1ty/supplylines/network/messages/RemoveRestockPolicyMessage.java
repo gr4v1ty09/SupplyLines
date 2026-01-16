@@ -46,6 +46,7 @@ public class RemoveRestockPolicyMessage extends AbstractBuildingServerMessage<IB
         buf.writeItem(itemStack);
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     protected void onExecute(final NetworkEvent.Context ctx, final boolean isLogicalServer, final IColony colony,
             final IBuilding building) {

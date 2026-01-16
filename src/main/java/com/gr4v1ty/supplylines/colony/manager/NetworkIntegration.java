@@ -182,8 +182,19 @@ public final class NetworkIntegration {
             if (staging.bundleLeaderId != null) {
                 StagingRequest leader = this.pendingStagingRequests.get(staging.bundleLeaderId);
                 if (leader == null) {
-                    LOGGER.debug("{} Bundled follower's leader completed - removing follower", LogTags.DISPATCH);
-                    it.remove();
+                    // Leader completed - check if follower items arrived in staging
+                    boolean available = this.isAvailableInStaging(level, stagingRackPositions, staging.item, staging.quantity);
+                    if (available) {
+                        LOGGER.debug("{} Bundled follower (item={}) leader completed - items available, marking completed",
+                                LogTags.DISPATCH, staging.item.getHoverName().getString());
+                        staging.state = StagingRequest.State.COMPLETED;
+                        it.remove();
+                        reassignmentCallback.run();
+                    } else {
+                        LOGGER.debug("{} Bundled follower (item={}) leader completed - items not available, removing",
+                                LogTags.DISPATCH, staging.item.getHoverName().getString());
+                        it.remove();
+                    }
                     continue;
                 }
                 if (leader.state == StagingRequest.State.BROADCASTED) {

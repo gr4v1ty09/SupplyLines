@@ -14,16 +14,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import net.minecraft.core.BlockPos;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Marker;
 import net.minecraft.world.phys.AABB;
 
 public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, BuildingStockKeeper> {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(AIStockKeeper.class);
 
     /** Gets the state machine tick rate (requires restart to take effect) */
     private static int getStateMachineTickRate() {
@@ -128,15 +124,11 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
 
                 // Check if patrol requested (triggered by order placement)
                 if (hut != null && hut.consumePatrolRequest()) {
-                    LOGGER.debug("[SK-AI] Patrol requested, selecting patrol point");
                     BlockPos nextPatrol = selectNextPatrolPoint(hut, entity.blockPosition());
                     if (nextPatrol != null) {
-                        LOGGER.debug("[SK-AI] Starting patrol to {}", nextPatrol);
                         patrolTarget = nextPatrol;
                         phase = Phase.PATROLLING;
                         break;
-                    } else {
-                        LOGGER.debug("[SK-AI] No valid patrol point found");
                     }
                 }
 
@@ -153,7 +145,6 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                         patrolTarget.getZ() + 0.5);
 
                 if (patrolDistSq <= getArriveDistanceSq()) {
-                    LOGGER.debug("[SK-AI] Arrived at patrol target, starting inspection");
                     entity.getNavigation().stop();
                     phase = Phase.INSPECTING;
                     inspectTicks = 0;
@@ -185,7 +176,6 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
 
                 // Done inspecting, return to main work position
                 if (inspectTicks >= getInspectDurationTicks()) {
-                    LOGGER.debug("[SK-AI] Inspection complete, returning to work");
                     resetToWalking();
                 }
                 break;
@@ -231,18 +221,15 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
 
         // Add belt positions (primary target for order verification)
         List<BlockPos> belts = hut.getBeltPositions();
-        LOGGER.debug("[SK-AI] Belt positions: {}", belts.size());
         candidates.addAll(belts);
 
         // Add a random rack position as fallback
         List<BlockPos> racks = hut.getRackPositions();
-        LOGGER.debug("[SK-AI] Rack positions: {}", racks.size());
         if (!racks.isEmpty()) {
             candidates.add(racks.get(rnd.nextInt(racks.size())));
         }
 
         if (candidates.isEmpty()) {
-            LOGGER.debug("[SK-AI] No candidates at all");
             return null;
         }
 
@@ -252,13 +239,10 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
             double distSq = currentPos.distSqr(pos);
             if (distSq > getArriveDistanceSq() * 2) {
                 validCandidates.add(pos);
-            } else {
-                LOGGER.debug("[SK-AI] Filtered out {} (too close, distSq={})", pos, distSq);
             }
         }
 
         if (validCandidates.isEmpty()) {
-            LOGGER.debug("[SK-AI] All candidates filtered out");
             return null;
         }
 

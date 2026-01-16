@@ -1,7 +1,7 @@
 package com.gr4v1ty.supplylines;
 
-import com.gr4v1ty.supplylines.compat.structurize.CreateMultiblockPlacementHandler;
-import com.gr4v1ty.supplylines.compat.structurize.CreateTrainBlockPreservationHandler;
+import com.gr4v1ty.supplylines.compat.structurize.ModPlacementHandlers;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.gr4v1ty.supplylines.network.ModNetwork;
 import com.gr4v1ty.supplylines.registry.ModBlocks;
 import com.gr4v1ty.supplylines.registry.ModBuildings;
@@ -9,10 +9,8 @@ import com.gr4v1ty.supplylines.registry.ModItems;
 import com.gr4v1ty.supplylines.registry.ModJobs;
 import com.gr4v1ty.supplylines.rs.SupplyLinesRequestSystem;
 import com.gr4v1ty.supplylines.util.ModVersion;
-import com.ldtteam.structurize.placement.handlers.placement.PlacementHandlers;
-import com.minecolonies.api.sounds.ModSoundEvents;
+import com.gr4v1ty.supplylines.util.SoundFallbacks;
 import org.slf4j.LoggerFactory;
-import java.util.Map;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -36,6 +34,7 @@ public final class SupplyLines {
     private static final Logger LOGGER = LoggerFactory.getLogger(SupplyLines.class);
 
     public SupplyLines() {
+        ModConfig.register();
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         ModBlocks.BLOCKS.register(modBus);
         ModItems.ITEMS.register(modBus);
@@ -54,22 +53,8 @@ public final class SupplyLines {
                 LOGGER.error("[{}] Failed to register Request System factories", (Object) MOD_ID, (Object) ex);
             }
             e.enqueueWork(() -> {
-                PlacementHandlers.add(new CreateTrainBlockPreservationHandler());
-                PlacementHandlers.add(new CreateMultiblockPlacementHandler());
-                String[] fallbacks = new String[]{"deliveryman", "unemployed", "builder"};
-                @SuppressWarnings("rawtypes")
-                Map map = ModSoundEvents.CITIZEN_SOUND_EVENTS;
-                if (map != null && !map.containsKey("stock_keeper")) {
-                    for (String fb : fallbacks) {
-                        Object bucket = map.get(fb);
-                        if (bucket == null)
-                            continue;
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> typedMap = map;
-                        typedMap.put("stock_keeper", bucket);
-                        break;
-                    }
-                }
+                ModPlacementHandlers.register();
+                SoundFallbacks.registerStockKeeperSounds();
             });
         });
     }

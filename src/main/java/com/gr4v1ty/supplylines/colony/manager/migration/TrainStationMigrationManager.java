@@ -4,8 +4,8 @@ import com.gr4v1ty.supplylines.colony.manager.migration.data.TrainStationMigrati
 import com.gr4v1ty.supplylines.util.LogTags;
 import com.simibubi.create.content.logistics.packagePort.PackagePortTarget;
 import com.simibubi.create.content.logistics.packagePort.postbox.PostboxBlockEntity;
+import com.simibubi.create.content.trains.station.GlobalPackagePort;
 import com.simibubi.create.content.trains.station.GlobalStation;
-import com.simibubi.create.content.trains.station.GlobalStation.GlobalPackagePort;
 import com.simibubi.create.content.trains.station.StationBlockEntity;
 import com.simibubi.create.content.trains.track.TrackTargetingBehaviour;
 import net.minecraft.core.BlockPos;

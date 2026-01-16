@@ -162,9 +162,9 @@ dependencies {
 
     // Multi-Piston - download manually from CurseForge, not on LDTTeam maven for 1.20.1
 
-    // Create 6.0.6 for 1.20.1 (project 328085, file 6641603)
-    compileOnly(fg.deobf("curse.maven:create-328085:6641603"))
-    runtimeOnly(fg.deobf("curse.maven:create-328085:6641603"))
+    // Create 6.0.8 for 1.20.1 (project 328085, file 7178761)
+    compileOnly(fg.deobf("curse.maven:create-328085:7178761"))
+    runtimeOnly(fg.deobf("curse.maven:create-328085:7178761"))
 
     // Ponder (required by Create for FlapDisplayBlockEntity hierarchy)
     compileOnly("net.createmod.ponder:Ponder-Forge-1.20.1:1.0.92")

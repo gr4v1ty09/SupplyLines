@@ -1,6 +1,7 @@
 package com.gr4v1ty.supplylines.colony.manager;
 
 import com.gr4v1ty.supplylines.colony.model.StagingRequest;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.gr4v1ty.supplylines.rs.util.DeliveryPlanning;
 import com.gr4v1ty.supplylines.util.ItemMatch;
 import com.gr4v1ty.supplylines.util.inventory.RackPicker;
@@ -39,8 +40,14 @@ import org.slf4j.LoggerFactory;
 public final class NetworkIntegration {
     private static final Logger LOGGER = LoggerFactory.getLogger(NetworkIntegration.class);
     private static final String DELIVERY_FROGPORT_NAME = "SK_Deliveries";
-    private static final long STAGING_TIMEOUT_TICKS = 1200L;
-    private static final long BUFFER_WINDOW_TICKS = 60L;
+
+    private static long getStagingTimeoutTicks() {
+        return ModConfig.SERVER.stagingTimeoutTicks.get();
+    }
+
+    private static long getBufferWindowTicks() {
+        return ModConfig.SERVER.bufferWindowTicks.get();
+    }
     private final Map<IToken<?>, StagingRequest> pendingStagingRequests = new HashMap<>();
     private final Map<ItemMatch.ItemStackKey, Long> stockLevels = new HashMap<ItemMatch.ItemStackKey, Long>();
     private final Map<ItemMatch.ItemStackKey, Long> previousStockLevels = new HashMap<ItemMatch.ItemStackKey, Long>();
@@ -228,7 +235,7 @@ public final class NetworkIntegration {
                 continue;
             }
             long elapsed = level.getGameTime() - staging.requestedAtTick;
-            if (elapsed <= STAGING_TIMEOUT_TICKS)
+            if (elapsed <= getStagingTimeoutTicks())
                 continue;
             staging.state = StagingRequest.State.CANCELLED;
             it.remove();
@@ -243,7 +250,7 @@ public final class NetworkIntegration {
         if (now <= 0L) {
             return;
         }
-        if (this.lastBufferFlushTick != Long.MIN_VALUE && now - this.lastBufferFlushTick < BUFFER_WINDOW_TICKS) {
+        if (this.lastBufferFlushTick != Long.MIN_VALUE && now - this.lastBufferFlushTick < getBufferWindowTicks()) {
             return;
         }
         this.lastBufferFlushTick = now;

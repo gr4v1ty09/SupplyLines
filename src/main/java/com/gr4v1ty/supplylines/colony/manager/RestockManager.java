@@ -5,6 +5,7 @@ import com.gr4v1ty.supplylines.colony.buildings.modules.RestockPolicyModule.Poli
 import com.gr4v1ty.supplylines.colony.buildings.modules.SuppliersModule;
 import com.gr4v1ty.supplylines.colony.buildings.modules.SuppliersModule.SupplierEntry;
 import com.gr4v1ty.supplylines.compat.create.DisplayBoardWriter;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.gr4v1ty.supplylines.util.ItemMatch;
 import com.gr4v1ty.supplylines.util.LogTags;
 import com.minecolonies.api.colony.IColony;
@@ -40,14 +41,30 @@ import java.util.stream.Collectors;
 public final class RestockManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(RestockManager.class);
 
-    /** Display board update interval: 100 ticks = 5 seconds */
-    private static final int DISPLAY_UPDATE_INTERVAL_TICKS = 100;
+    /** Gets the display board update interval from config */
+    private static int getDisplayUpdateIntervalTicks() {
+        return ModConfig.SERVER.displayUpdateIntervalTicks.get();
+    }
 
-    /** Default assumed delivery time for ETA calculation */
-    private static final long DEFAULT_DELIVERY_TICKS = 400;
+    /** Gets the default assumed delivery time for ETA calculation from config */
+    private static long getDefaultDeliveryTicks() {
+        return ModConfig.SERVER.defaultDeliveryTicks.get();
+    }
 
-    /** Extra buffer time after ETA before removing order from tracking */
-    private static final long ORDER_EXPIRY_BUFFER_TICKS = 200;
+    /** Gets the extra buffer time after ETA before removing order from config */
+    private static long getOrderExpiryBufferTicks() {
+        return ModConfig.SERVER.orderExpiryBufferTicks.get();
+    }
+
+    /** Gets the item name truncation length from config */
+    private static int getItemNameTruncation() {
+        return ModConfig.SERVER.itemNameTruncation.get();
+    }
+
+    /** Gets the ETA format threshold in seconds from config */
+    private static int getEtaFormatThresholdSeconds() {
+        return ModConfig.SERVER.etaFormatThresholdSeconds.get();
+    }
 
     @SuppressWarnings("unused")
     private final IColony colony;
@@ -76,7 +93,7 @@ public final class RestockManager {
         }
 
         public long getEstimatedArrivalTick() {
-            return requestedAtTick + DEFAULT_DELIVERY_TICKS;
+            return requestedAtTick + getDefaultDeliveryTicks();
         }
     }
 
@@ -180,7 +197,8 @@ public final class RestockManager {
     }
 
     private boolean shouldUpdateDisplay(long now) {
-        return lastDisplayUpdateTick == Long.MIN_VALUE || now - lastDisplayUpdateTick >= DISPLAY_UPDATE_INTERVAL_TICKS;
+        return lastDisplayUpdateTick == Long.MIN_VALUE
+                || now - lastDisplayUpdateTick >= getDisplayUpdateIntervalTicks();
     }
 
     /**
@@ -420,13 +438,14 @@ public final class RestockManager {
         // Header line
         lines.add(Component.literal("Incoming Shipments").withStyle(ChatFormatting.GOLD));
 
+        int maxNameLen = getItemNameTruncation();
         for (RestockOrder order : sortedOrders) {
-            String itemName = truncateString(order.item.getDisplayName().getString(), 12);
+            String itemName = truncateString(order.item.getDisplayName().getString(), maxNameLen);
             int qty = order.quantity;
             String eta = formatETA(order.getEstimatedArrivalTick() - now);
 
             // Format: "ItemName x64 ~30s"
-            Component line = Component.literal(String.format("%-12s x%-4d %s", itemName, qty, eta));
+            Component line = Component.literal(String.format("%-" + maxNameLen + "s x%-4d %s", itemName, qty, eta));
             lines.add(line);
         }
 
@@ -441,7 +460,7 @@ public final class RestockManager {
             return "arriving";
         }
         int seconds = (int) (ticksRemaining / 20);
-        if (seconds < 60) {
+        if (seconds < getEtaFormatThresholdSeconds()) {
             return "~" + seconds + "s";
         }
         int minutes = seconds / 60;
@@ -466,7 +485,7 @@ public final class RestockManager {
 
         while (it.hasNext()) {
             RestockOrder order = it.next().getValue();
-            long expiryTick = order.getEstimatedArrivalTick() + ORDER_EXPIRY_BUFFER_TICKS;
+            long expiryTick = order.getEstimatedArrivalTick() + getOrderExpiryBufferTicks();
             if (now > expiryTick) {
                 LOGGER.debug("{} Expiring restock order for {} (past ETA)", LogTags.ORDERING,
                         order.item.getDisplayName().getString());

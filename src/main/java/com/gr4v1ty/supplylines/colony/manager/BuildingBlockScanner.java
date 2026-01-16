@@ -1,6 +1,7 @@
 package com.gr4v1ty.supplylines.colony.manager;
 
 import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.simibubi.create.AllBlocks;
 import java.util.ArrayList;
@@ -24,7 +25,11 @@ public final class BuildingBlockScanner {
     private static final Logger LOGGER = LoggerFactory.getLogger(BuildingBlockScanner.class);
     @SuppressWarnings("removal") // ResourceLocation constructor deprecated in Forge 47.x, will migrate in 1.21
     public static final ResourceLocation RACK_ID = new ResourceLocation("minecolonies", "blockminecoloniesrack");
-    private static final int AUXILIARY_SCAN_RADIUS = 16;
+
+    /** Gets the auxiliary scan radius from config */
+    private static int getAuxiliaryScanRadius() {
+        return ModConfig.SERVER.auxiliaryScanRadius.get();
+    }
     @Nullable
     private final Block rackBlock = ForgeRegistries.BLOCKS.getValue(RACK_ID);
     private final List<BlockPos> rackPositions = new ArrayList<BlockPos>();
@@ -47,11 +52,11 @@ public final class BuildingBlockScanner {
         this.rackPositions.clear();
         this.rackPositions.addAll(this.scanRacks(level));
         this.lastScanGameTime = Math.max(1L, level.getGameTime());
-        if (buildingLevel >= BuildingStockKeeper.STOCK_TICKER_REQUIRED_LEVEL) {
-            this.stockTickerPos = this.findNearestBlock(level, this.building.getPosition(), AUXILIARY_SCAN_RADIUS,
+        if (buildingLevel >= BuildingStockKeeper.getStockTickerRequiredLevel()) {
+            this.stockTickerPos = this.findNearestBlock(level, this.building.getPosition(), getAuxiliaryScanRadius(),
                     (Block) AllBlocks.STOCK_TICKER.get());
             this.seatPos = this.findNearestSeat(level);
-            this.displayBoardPos = this.findNearestBlock(level, this.building.getPosition(), AUXILIARY_SCAN_RADIUS,
+            this.displayBoardPos = this.findNearestBlock(level, this.building.getPosition(), getAuxiliaryScanRadius(),
                     (Block) AllBlocks.DISPLAY_BOARD.get());
             this.beltPositions.clear();
             this.beltPositions.addAll(this.scanBelts(level));
@@ -147,7 +152,7 @@ public final class BuildingBlockScanner {
         for (DyeColor color : DyeColor.values()) {
             try {
                 Block seatBlock = (Block) AllBlocks.SEATS.get(color).get();
-                BlockPos found = this.findNearestBlock(level, this.building.getPosition(), AUXILIARY_SCAN_RADIUS,
+                BlockPos found = this.findNearestBlock(level, this.building.getPosition(), getAuxiliaryScanRadius(),
                         seatBlock);
                 if (found == null)
                     continue;
@@ -183,7 +188,7 @@ public final class BuildingBlockScanner {
         ArrayList<BlockPos> belts = new ArrayList<>();
         BlockPos center = this.building.getPosition();
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        int r = AUXILIARY_SCAN_RADIUS;
+        int r = getAuxiliaryScanRadius();
 
         for (int dx = -r; dx <= r; ++dx) {
             for (int dy = -2; dy <= 6; ++dy) {

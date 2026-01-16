@@ -135,7 +135,7 @@ public abstract class AbstractResolver<T extends IRequestable> implements IReque
         BuildingStockKeeper building = this.getBuilding(manager);
         if (building != null) {
             boolean hasStockTicker = building.hasStockTicker();
-            if (building.getBuildingLevel() >= BuildingStockKeeper.STOCK_TICKER_REQUIRED_LEVEL && hasStockTicker) {
+            if (building.getBuildingLevel() >= BuildingStockKeeper.getStockTickerRequiredLevel() && hasStockTicker) {
                 boolean availableInNetwork = this.isAvailableInNetwork(building, request);
                 LOGGER.debug("{} canResolveRequest: isAvailableInNetwork={}", LogTags.ORDERING, availableInNetwork);
                 if (availableInNetwork) {
@@ -186,7 +186,7 @@ public abstract class AbstractResolver<T extends IRequestable> implements IReque
         }
 
         BuildingStockKeeper building = this.getBuilding(manager);
-        if (building != null && building.getBuildingLevel() >= BuildingStockKeeper.STOCK_TICKER_REQUIRED_LEVEL
+        if (building != null && building.getBuildingLevel() >= BuildingStockKeeper.getStockTickerRequiredLevel()
                 && building.hasStockTicker()) {
             boolean availableInNetwork = this.isAvailableInNetwork(building, request);
             if (availableInNetwork) {

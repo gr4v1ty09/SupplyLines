@@ -2,6 +2,7 @@ package com.gr4v1ty.supplylines.rs.resolver;
 
 import com.google.common.reflect.TypeToken;
 import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.gr4v1ty.supplylines.util.LogTags;
 import com.minecolonies.api.colony.requestsystem.location.ILocation;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
@@ -44,7 +45,10 @@ public final class BurnableResolver extends AbstractResolver<Burnable> {
     @Override
     protected double calculateSkillXP(IRequest<? extends Burnable> request) {
         int count = request.getRequest().getCount();
-        return 1.0 + Math.min((double) count / 16.0, 4.0);
+        double base = ModConfig.SERVER.stackXpBase.get();
+        double divisor = ModConfig.SERVER.stackXpDivisor.get();
+        double cap = ModConfig.SERVER.stackXpCap.get();
+        return base + Math.min((double) count / divisor, cap);
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.gr4v1ty.supplylines.rs.resolver;
 
 import com.google.common.reflect.TypeToken;
 import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.gr4v1ty.supplylines.util.LogTags;
 import com.minecolonies.api.colony.requestsystem.location.ILocation;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
@@ -56,7 +57,13 @@ public final class StackListResolver extends AbstractResolver<StackList> {
         StackList stackListReq = request.getRequest();
         int itemCount = stackListReq.getCount();
         int stackTypes = stackListReq.getStacks().size();
-        return 2.0 + Math.min((double) itemCount / 16.0, 2.0) + Math.min((double) stackTypes / 4.0, 2.0);
+        double base = ModConfig.SERVER.stackListXpBase.get();
+        double itemDivisor = ModConfig.SERVER.stackListXpItemDivisor.get();
+        double itemCap = ModConfig.SERVER.stackListXpItemCap.get();
+        double typeDivisor = ModConfig.SERVER.stackListXpTypeDivisor.get();
+        double typeCap = ModConfig.SERVER.stackListXpTypeCap.get();
+        return base + Math.min((double) itemCount / itemDivisor, itemCap)
+                + Math.min((double) stackTypes / typeDivisor, typeCap);
     }
 
     @Override

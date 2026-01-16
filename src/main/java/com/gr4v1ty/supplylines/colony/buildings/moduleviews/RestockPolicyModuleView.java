@@ -1,5 +1,6 @@
 package com.gr4v1ty.supplylines.colony.buildings.moduleviews;
 
+import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
 import com.gr4v1ty.supplylines.colony.buildings.modules.RestockPolicyModule;
 import com.ldtteam.blockui.views.BOWindow;
 import com.minecolonies.api.colony.buildings.modules.AbstractBuildingModuleView;
@@ -19,9 +20,6 @@ import java.util.List;
  * restock policies.
  */
 public class RestockPolicyModuleView extends AbstractBuildingModuleView {
-    /** Required building level for this tab to be visible. */
-    private static final int REQUIRED_LEVEL = 5;
-
     /** Local copy of policy entries from server. */
     private final List<RestockPolicyModule.PolicyEntry> policies = new ArrayList<>();
 
@@ -40,7 +38,7 @@ public class RestockPolicyModuleView extends AbstractBuildingModuleView {
 
     @Override
     public boolean isPageVisible() {
-        return getBuildingView().getBuildingLevel() >= REQUIRED_LEVEL;
+        return getBuildingView().getBuildingLevel() >= BuildingStockKeeper.getRestockPolicyRequiredLevel();
     }
 
     @Override

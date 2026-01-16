@@ -2,6 +2,7 @@ package com.gr4v1ty.supplylines.colony.ai;
 
 import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
 import com.gr4v1ty.supplylines.colony.jobs.JobStockKeeper;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.minecolonies.api.entity.ai.statemachine.AITarget;
 import com.minecolonies.api.entity.ai.statemachine.states.AIWorkerState;
 import com.minecolonies.api.entity.ai.statemachine.states.IAIState;
@@ -23,11 +24,26 @@ import net.minecraft.world.phys.AABB;
 public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, BuildingStockKeeper> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AIStockKeeper.class);
-    private static final int STATE_MACHINE_TICK_RATE = 20;
-    private static final double WALK_SPEED = 1.0;
-    private static final double ARRIVE_DISTANCE_SQ = 4.0;
-    private static final int STOCK_TICKER_LEVEL = 4;
-    private static final int INSPECT_DURATION_TICKS = 4; // ~4 seconds (state machine ticks at 20 game ticks)
+
+    /** Gets the state machine tick rate (requires restart to take effect) */
+    private static int getStateMachineTickRate() {
+        return ModConfig.SERVER.stateMachineTickRate.get();
+    }
+
+    /** Gets the walk speed from config */
+    private static double getWalkSpeed() {
+        return ModConfig.SERVER.walkSpeed.get();
+    }
+
+    /** Gets the arrival distance squared from config */
+    private static double getArriveDistanceSq() {
+        return ModConfig.SERVER.arriveDistanceSq.get();
+    }
+
+    /** Gets the inspect duration in state machine ticks from config */
+    private static int getInspectDurationTicks() {
+        return ModConfig.SERVER.inspectDurationTicks.get();
+    }
 
     private enum Phase {
         WALKING, // Walking to main work target
@@ -48,7 +64,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
     public AIStockKeeper(JobStockKeeper job) {
         super(job);
         super.registerTargets(new TickingTransition[]{
-                new AITarget<IAIState>(AIWorkerState.IDLE, this::idleProviderLoop, STATE_MACHINE_TICK_RATE)});
+                new AITarget<IAIState>(AIWorkerState.IDLE, this::idleProviderLoop, getStateMachineTickRate())});
     }
 
     @Override
@@ -76,12 +92,12 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                 double distSq = entity.distanceToSqr(workTarget.getX() + 0.5, workTarget.getY() + 0.5,
                         workTarget.getZ() + 0.5);
 
-                if (distSq <= ARRIVE_DISTANCE_SQ) {
+                if (distSq <= getArriveDistanceSq()) {
                     entity.getNavigation().stop();
                     phase = Phase.WORKING;
                 } else {
                     entity.getNavigation().moveTo(workTarget.getX() + 0.5, workTarget.getY() + 1.0,
-                            workTarget.getZ() + 0.5, WALK_SPEED);
+                            workTarget.getZ() + 0.5, getWalkSpeed());
                 }
                 break;
 
@@ -92,7 +108,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                 }
 
                 // Ensure seat occupied for stock ticker (level 4+)
-                if (hut != null && hut.getBuildingLevel() >= STOCK_TICKER_LEVEL) {
+                if (hut != null && hut.getBuildingLevel() >= BuildingStockKeeper.getStockTickerRequiredLevel()) {
                     BlockPos seatPos = hut.getSeatPos();
                     if (seatPos != null) {
                         ensureSeatOccupied(seatPos);
@@ -136,7 +152,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                 double patrolDistSq = entity.distanceToSqr(patrolTarget.getX() + 0.5, patrolTarget.getY() + 0.5,
                         patrolTarget.getZ() + 0.5);
 
-                if (patrolDistSq <= ARRIVE_DISTANCE_SQ) {
+                if (patrolDistSq <= getArriveDistanceSq()) {
                     LOGGER.debug("[SK-AI] Arrived at patrol target, starting inspection");
                     entity.getNavigation().stop();
                     phase = Phase.INSPECTING;
@@ -144,7 +160,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                 } else {
                     // Navigate to belt level (not on top of it)
                     entity.getNavigation().moveTo(patrolTarget.getX() + 0.5, patrolTarget.getY(),
-                            patrolTarget.getZ() + 0.5, WALK_SPEED);
+                            patrolTarget.getZ() + 0.5, getWalkSpeed());
                 }
                 break;
 
@@ -168,7 +184,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                 inspectTicks++;
 
                 // Done inspecting, return to main work position
-                if (inspectTicks >= INSPECT_DURATION_TICKS) {
+                if (inspectTicks >= getInspectDurationTicks()) {
                     LOGGER.debug("[SK-AI] Inspection complete, returning to work");
                     resetToWalking();
                 }
@@ -186,7 +202,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
             return false;
         }
         double distSq = entity.distanceToSqr(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
-        if (distSq > ARRIVE_DISTANCE_SQ * 4) {
+        if (distSq > getArriveDistanceSq() * 4) {
             resetToWalking();
             return true;
         }
@@ -234,7 +250,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         List<BlockPos> validCandidates = new ArrayList<>();
         for (BlockPos pos : candidates) {
             double distSq = currentPos.distSqr(pos);
-            if (distSq > ARRIVE_DISTANCE_SQ * 2) {
+            if (distSq > getArriveDistanceSq() * 2) {
                 validCandidates.add(pos);
             } else {
                 LOGGER.debug("[SK-AI] Filtered out {} (too close, distSq={})", pos, distSq);
@@ -255,7 +271,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         if (hut == null) {
             return null;
         }
-        if (hut.getBuildingLevel() >= STOCK_TICKER_LEVEL) {
+        if (hut.getBuildingLevel() >= BuildingStockKeeper.getStockTickerRequiredLevel()) {
             return hut.getSeatPos();
         }
         return hut.getPosition();

@@ -1,6 +1,7 @@
 package com.gr4v1ty.supplylines.colony.manager;
 
 import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.gr4v1ty.supplylines.rs.SupplyLinesRequestSystem;
 import com.gr4v1ty.supplylines.rs.location.IntakeLocation;
 import com.gr4v1ty.supplylines.rs.resolver.BurnableResolver;
@@ -119,7 +120,7 @@ public final class RequestHandler {
             ILocation loc = requester.getLocation();
             return new IntakeLocation(loc.getDimension(), loc.getInDimensionLocation());
         };
-        int priority = 80;
+        int priority = ModConfig.SERVER.resolverPriority.get();
 
         LOGGER.debug(
                 "{} Registering components for 6 resolvers: stack={}, tool={}, tag={}, stacklist={}, food={}, burnable={}",

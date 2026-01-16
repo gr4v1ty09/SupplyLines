@@ -1,5 +1,6 @@
 package com.gr4v1ty.supplylines.colony.manager;
 
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.entity.citizen.Skill;
 import com.minecolonies.api.entity.citizen.citizenhandlers.ICitizenSkillHandler;
@@ -53,17 +54,26 @@ public final class SkillManager {
 
     public int getRescanIntervalTicks() {
         int strength = this.getWorkerStrengthSkill();
-        return Math.max(60, 400 - strength * 68 / 10);
+        int base = ModConfig.SERVER.rescanBase.get();
+        int min = ModConfig.SERVER.rescanMin.get();
+        double multiplier = ModConfig.SERVER.rescanStrengthMultiplier.get();
+        return Math.max(min, base - (int) (strength * multiplier));
     }
 
     public int getStockSnapshotIntervalTicks() {
         int dexterity = this.getWorkerDexteritySkill();
-        return Math.max(20, 200 - dexterity * 36 / 10);
+        int base = ModConfig.SERVER.snapshotBase.get();
+        int min = ModConfig.SERVER.snapshotMin.get();
+        double multiplier = ModConfig.SERVER.snapshotDexterityMultiplier.get();
+        return Math.max(min, base - (int) (dexterity * multiplier));
     }
 
     public int getStagingProcessIntervalTicks() {
         int strength = this.getWorkerStrengthSkill();
-        return Math.max(10, 60 - strength);
+        int base = ModConfig.SERVER.stagingBase.get();
+        int min = ModConfig.SERVER.stagingMin.get();
+        double multiplier = ModConfig.SERVER.stagingStrengthMultiplier.get();
+        return Math.max(min, base - (int) (strength * multiplier));
     }
 
     public void awardWorkerSkillXP(double baseXp) {
@@ -108,6 +118,9 @@ public final class SkillManager {
      */
     public int getRestockIntervalTicks() {
         int dexterity = this.getWorkerDexteritySkill();
-        return Math.max(200, 600 - dexterity * 8);
+        int base = ModConfig.SERVER.restockBase.get();
+        int min = ModConfig.SERVER.restockMin.get();
+        double multiplier = ModConfig.SERVER.restockDexterityMultiplier.get();
+        return Math.max(min, base - (int) (dexterity * multiplier));
     }
 }

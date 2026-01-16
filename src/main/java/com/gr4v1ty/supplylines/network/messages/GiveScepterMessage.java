@@ -57,8 +57,7 @@ public class GiveScepterMessage extends AbstractBuildingServerMessage<IBuilding>
         }
 
         // Create the configured scepter and add to player's hotbar
-        InventoryUtils.getOrCreateItemAndPutToHotbarAndSelectOrDrop(
-                ModItems.SCEPTER_STOCKKEEPER.get(), player,
+        InventoryUtils.getOrCreateItemAndPutToHotbarAndSelectOrDrop(ModItems.SCEPTER_STOCKKEEPER.get(), player,
                 () -> ItemScepterStockKeeper.createConfiguredScepter(colony.getID(), building.getID()), true);
 
         player.getInventory().setChanged();

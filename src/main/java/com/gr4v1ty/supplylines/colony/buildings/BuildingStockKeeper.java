@@ -5,6 +5,7 @@ import com.gr4v1ty.supplylines.colony.manager.BuildingBlockScanner;
 import com.gr4v1ty.supplylines.colony.manager.RequestHandler;
 import com.gr4v1ty.supplylines.colony.manager.RestockManager;
 import com.gr4v1ty.supplylines.colony.manager.SkillManager;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.gr4v1ty.supplylines.colony.manager.migration.PanelMigrationManager;
 import com.gr4v1ty.supplylines.colony.manager.migration.TrainStationMigrationManager;
 import com.gr4v1ty.supplylines.colony.manager.migration.data.PanelMigrationData;
@@ -48,22 +49,42 @@ import org.slf4j.LoggerFactory;
 public class BuildingStockKeeper extends AbstractBuilding {
     private static final Logger LOGGER = LoggerFactory.getLogger(BuildingStockKeeper.class);
 
-    /** Building level required for stock ticker functionality */
-    public static final int STOCK_TICKER_REQUIRED_LEVEL = 4;
+    /** Gets the building level required for stock ticker functionality */
+    public static int getStockTickerRequiredLevel() {
+        return ModConfig.SERVER.stockTickerRequiredLevel.get();
+    }
 
-    /** Building level required for restock policy functionality */
-    public static final int RESTOCK_POLICY_REQUIRED_LEVEL = 5;
+    /** Gets the building level required for restock policy functionality */
+    public static int getRestockPolicyRequiredLevel() {
+        return ModConfig.SERVER.restockPolicyRequiredLevel.get();
+    }
 
-    /** Default interval for inventory signature refresh checks */
-    private static final int DEFAULT_INV_SIG_INTERVAL_TICKS = 40;
-    /** Default interval for staging process when no skill manager */
-    private static final int DEFAULT_STAGING_PROCESS_INTERVAL_TICKS = 60;
-    /** Default interval for rack rescan when no skill manager */
-    private static final int DEFAULT_RESCAN_INTERVAL_TICKS = 400;
-    /** Default interval for stock snapshot updates when no skill manager */
-    private static final int DEFAULT_STOCK_SNAPSHOT_INTERVAL_TICKS = 200;
-    /** Default interval for restock policy checks when no skill manager */
-    private static final int DEFAULT_RESTOCK_INTERVAL_TICKS = 600;
+    /** Gets the default interval for inventory signature refresh checks */
+    private static int getDefaultInvSigIntervalTicks() {
+        return ModConfig.SERVER.defaultInvSigIntervalTicks.get();
+    }
+
+    /** Gets the default interval for staging process when no skill manager */
+    private static int getDefaultStagingProcessIntervalTicks() {
+        return ModConfig.SERVER.defaultStagingProcessIntervalTicks.get();
+    }
+
+    /** Gets the default interval for rack rescan when no skill manager */
+    private static int getDefaultRescanIntervalTicks() {
+        return ModConfig.SERVER.defaultRescanIntervalTicks.get();
+    }
+
+    /**
+     * Gets the default interval for stock snapshot updates when no skill manager
+     */
+    private static int getDefaultStockSnapshotIntervalTicks() {
+        return ModConfig.SERVER.defaultStockSnapshotIntervalTicks.get();
+    }
+
+    /** Gets the default interval for restock policy checks when no skill manager */
+    private static int getDefaultRestockIntervalTicks() {
+        return ModConfig.SERVER.defaultRestockIntervalTicks.get();
+    }
 
     /** NBT tag for storing pending panel migration data. */
     private static final String TAG_PENDING_MIGRATION = "pendingPanelMigration";
@@ -220,11 +241,11 @@ public class BuildingStockKeeper extends AbstractBuilding {
         this.scanIfDue(level);
         this.refreshInventorySignatureIfDue(level);
         this.ensureRSRegistered(level);
-        if (this.getBuildingLevel() >= STOCK_TICKER_REQUIRED_LEVEL && workerActive) {
+        if (this.getBuildingLevel() >= getStockTickerRequiredLevel() && workerActive) {
             this.updateStockSnapshotIfDue(level);
             this.processStagingRequestsIfDue(level);
         }
-        if (this.getBuildingLevel() >= RESTOCK_POLICY_REQUIRED_LEVEL && workerActive) {
+        if (this.getBuildingLevel() >= getRestockPolicyRequiredLevel() && workerActive) {
             this.processRestockPoliciesIfDue(level);
         }
     }
@@ -241,7 +262,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         this.ensureSkillManagerInitialized();
         int interval = this.skillManager != null
                 ? this.skillManager.getRestockIntervalTicks()
-                : DEFAULT_RESTOCK_INTERVAL_TICKS;
+                : getDefaultRestockIntervalTicks();
 
         this.restockManager.processRestockPoliciesIfDue(level, policyModule, suppliersModule, this.networkIntegration,
                 this.blockScanner.getDisplayBoardPos(), interval);
@@ -251,7 +272,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         this.ensureSkillManagerInitialized();
         int interval = this.skillManager != null
                 ? this.skillManager.getStagingProcessIntervalTicks()
-                : DEFAULT_STAGING_PROCESS_INTERVAL_TICKS;
+                : getDefaultStagingProcessIntervalTicks();
         this.networkIntegration.processStagingRequestsIfDue(level, this.blockScanner.getStockTickerPos(),
                 this.blockScanner.getRackPositions(), interval, () -> this.refreshInventorySignatureIfDue(level));
     }
@@ -265,7 +286,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         this.ensureSkillManagerInitialized();
         int interval = this.skillManager != null
                 ? this.skillManager.getRescanIntervalTicks()
-                : DEFAULT_RESCAN_INTERVAL_TICKS;
+                : getDefaultRescanIntervalTicks();
         if (this.blockScanner.isScanDue(level, interval)
                 && (racksChanged = this.blockScanner.rescan(level, this.getBuildingLevel()))
                 && (mcolony = this.getColony()) != null) {
@@ -360,7 +381,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (now <= 0L) {
             return;
         }
-        if (this.lastInvSigTick != Long.MIN_VALUE && now - this.lastInvSigTick < DEFAULT_INV_SIG_INTERVAL_TICKS) {
+        if (this.lastInvSigTick != Long.MIN_VALUE && now - this.lastInvSigTick < getDefaultInvSigIntervalTicks()) {
             return;
         }
         long sig = this.computeInventorySignature(level);
@@ -398,7 +419,8 @@ public class BuildingStockKeeper extends AbstractBuilding {
     }
 
     public boolean hasStockTicker() {
-        return this.getBuildingLevel() >= STOCK_TICKER_REQUIRED_LEVEL && this.blockScanner.getStockTickerPos() != null;
+        return this.getBuildingLevel() >= getStockTickerRequiredLevel()
+                && this.blockScanner.getStockTickerPos() != null;
     }
 
     public long getStockLevel(ItemStack item) {
@@ -501,7 +523,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         this.ensureSkillManagerInitialized();
         int interval = this.skillManager != null
                 ? this.skillManager.getStockSnapshotIntervalTicks()
-                : DEFAULT_STOCK_SNAPSHOT_INTERVAL_TICKS;
+                : getDefaultStockSnapshotIntervalTicks();
         this.networkIntegration.updateStockSnapshotIfDue(level, this.blockScanner.getStockTickerPos(), interval,
                 () -> this.reassignPendingRequestsOnStockChange(level));
     }
@@ -546,8 +568,8 @@ public class BuildingStockKeeper extends AbstractBuilding {
         int nextLevel = currentLevel + 1;
 
         // Check if this is a 4->5 upgrade candidate
-        boolean isLevel4To5 = (currentLevel == STOCK_TICKER_REQUIRED_LEVEL
-                && nextLevel == RESTOCK_POLICY_REQUIRED_LEVEL);
+        boolean isLevel4To5 = (currentLevel == getStockTickerRequiredLevel()
+                && nextLevel == getRestockPolicyRequiredLevel());
 
         // Check if work order already exists (would cause early return in
         // requestWorkOrder)
@@ -592,7 +614,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
         super.onUpgradeComplete(newLevel);
 
         // Check if we have pending migration data for this upgrade
-        if (newLevel == RESTOCK_POLICY_REQUIRED_LEVEL && this.pendingMigration != null) {
+        if (newLevel == getRestockPolicyRequiredLevel() && this.pendingMigration != null) {
             LOGGER.info("{} Upgrade to level {} complete, applying panel migration", LogTags.MIGRATION, newLevel);
 
             RestockPolicyModule policyModule = this.getFirstModuleOccurance(RestockPolicyModule.class);

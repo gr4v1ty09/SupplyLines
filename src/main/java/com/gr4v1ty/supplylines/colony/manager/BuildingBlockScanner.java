@@ -4,6 +4,8 @@ import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
 import com.gr4v1ty.supplylines.config.ModConfig;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.simibubi.create.AllBlocks;
+import com.simibubi.create.content.kinetics.belt.BeltBlock;
+import com.simibubi.create.content.kinetics.belt.BeltPart;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -196,7 +198,11 @@ public final class BuildingBlockScanner {
                     m.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
                     BlockState state = level.getBlockState(m);
                     if (state.is(beltBlock)) {
-                        belts.add(m.immutable());
+                        // Only include MIDDLE segments (avoid ends with funnels)
+                        BeltPart part = state.getValue(BeltBlock.PART);
+                        if (part == BeltPart.MIDDLE || part == BeltPart.PULLEY) {
+                            belts.add(m.immutable());
+                        }
                     }
                 }
             }

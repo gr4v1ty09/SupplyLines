@@ -33,13 +33,18 @@ public final class StackResolver extends AbstractResolver<Stack> {
     protected boolean isAvailableInNetwork(BuildingStockKeeper building, IRequest<? extends Stack> request) {
         Stack stackReq = request.getRequest();
         long available = building.getStockLevel(stackReq.getStack());
-        return available >= (long) stackReq.getCount();
+        // Use minCount for partial fulfillment - accept if we have at least the minimum
+        return available >= (long) stackReq.getMinimumCount();
     }
 
     @Override
     protected boolean requestFromStockNetwork(BuildingStockKeeper building, IRequest<? extends Stack> request) {
         Stack stackReq = request.getRequest();
-        return building.requestFromStockNetwork(stackReq.getStack(), stackReq.getCount(), request.getId());
+        long available = building.getStockLevel(stackReq.getStack());
+        // Request the lesser of what's available or what's requested (partial
+        // fulfillment)
+        int requestQty = (int) Math.min(available, stackReq.getCount());
+        return building.requestFromStockNetwork(stackReq.getStack(), requestQty, request.getId());
     }
 
     @Override

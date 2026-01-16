@@ -37,5 +37,8 @@
   "com.supplylines.restock.noaddress": "Stock Keeper needs %s from '%s' but no delivery address is set",
 
   "com.supplylines.research.supplylines.stock_keeping.name": "Stock Keeping",
-  "com.supplylines.research.supplylines.stock_keeping.subtitle": "Establish supply line logistics"
+  "com.supplylines.research.supplylines.stock_keeping.subtitle": "Establish supply line logistics",
+
+  "com.supplylines.research.supplylines.expanded_logistics.name": "Expanded Logistics",
+  "com.supplylines.research.supplylines.expanded_logistics.subtitle": "Manage more item types in restock policies"
 }

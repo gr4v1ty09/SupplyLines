@@ -241,7 +241,7 @@ public class PanelMigrationManager {
             // Check policy limit
             if (policyModule.hasReachedLimit()) {
                 LOGGER.warn("{} Reached max policy limit ({}), cannot add policy for {}", LogTags.MIGRATION,
-                        RestockPolicyModule.MAX_POLICIES, panel.getFilterItem().getDisplayName().getString());
+                        policyModule.getMaxPolicies(), panel.getFilterItem().getDisplayName().getString());
                 continue;
             }
 

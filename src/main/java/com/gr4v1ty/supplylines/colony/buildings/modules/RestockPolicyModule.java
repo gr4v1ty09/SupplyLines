@@ -1,5 +1,6 @@
 package com.gr4v1ty.supplylines.colony.buildings.modules;
 
+import com.gr4v1ty.supplylines.util.ResearchEffects;
 import com.minecolonies.api.colony.buildings.modules.AbstractBuildingModule;
 import com.minecolonies.api.colony.buildings.modules.IPersistentModule;
 import com.minecolonies.api.crafting.ItemStorage;
@@ -24,8 +25,19 @@ public class RestockPolicyModule extends AbstractBuildingModule implements IPers
     private static final String TAG_ITEM = "item";
     private static final String TAG_TARGET = "target";
 
-    /** Maximum number of policy entries allowed. */
-    public static final int MAX_POLICIES = 50;
+    /** Base maximum number of policy entries allowed. */
+    private static final int BASE_MAX_POLICIES = 20;
+
+    /**
+     * Calculate the maximum number of policies based on research effects.
+     *
+     * @return the current max policy limit.
+     */
+    public int getMaxPolicies() {
+        final double multiplier = 1 + building.getColony().getResearchManager().getResearchEffects()
+                .getEffectStrength(ResearchEffects.RESTOCK_POLICY_LIMIT);
+        return (int) (BASE_MAX_POLICIES * multiplier);
+    }
 
     /**
      * List of restock policy entries.
@@ -103,7 +115,7 @@ public class RestockPolicyModule extends AbstractBuildingModule implements IPers
         }
 
         // Check capacity
-        if (policies.size() >= MAX_POLICIES) {
+        if (policies.size() >= getMaxPolicies()) {
             return false;
         }
 
@@ -153,7 +165,7 @@ public class RestockPolicyModule extends AbstractBuildingModule implements IPers
      * @return true if at max capacity.
      */
     public boolean hasReachedLimit() {
-        return policies.size() >= MAX_POLICIES;
+        return policies.size() >= getMaxPolicies();
     }
 
     @Override

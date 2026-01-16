@@ -1,0 +1,33 @@
+{
+  "branch": "minecolonies:civilian",
+  "researchLevel": 2,
+  "parentResearch": "supplylines:supplylines/stock_keeping",
+  "name": "com.supplylines.research.supplylines.expanded_logistics.name",
+  "subtitle": "com.supplylines.research.supplylines.expanded_logistics.subtitle",
+  "icon": "minecraft:chest",
+  "requirements": [
+    {
+      "type": "minecolonies:single-building",
+      "building": "supplylines:stockkeeper",
+      "level": 5
+    }
+  ],
+  "costs": [
+    {
+      "type": "minecolonies:simple-item-cost",
+      "item": "create:brass_casing",
+      "quantity": 16
+    },
+    {
+      "type": "minecolonies:simple-item-cost",
+      "item": "minecraft:ender_pearl",
+      "quantity": 4
+    }
+  ],
+  "effects": [
+    {
+      "id": "supplylines:effects/restockpolicylimit",
+      "level": 1
+    }
+  ]
+}

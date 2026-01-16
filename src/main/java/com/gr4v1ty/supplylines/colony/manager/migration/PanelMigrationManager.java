@@ -130,8 +130,10 @@ public class PanelMigrationManager {
                                 // Supplier gauge - record the network
                                 supplierNetworks.put(itemKey, panelNetwork);
                             } else {
-                                // Requester gauge - record the count and address
-                                requestedCounts.put(itemKey, count);
+                                // Requester gauge - record the count (converted to items) and address
+                                // If upTo=true, count is already in items; if upTo=false, count is in stacks
+                                int itemCount = behaviour.upTo ? count : count * filter.getMaxStackSize();
+                                requestedCounts.put(itemKey, itemCount);
 
                                 String address = behaviour.recipeAddress;
                                 if (address != null && !address.isBlank()) {

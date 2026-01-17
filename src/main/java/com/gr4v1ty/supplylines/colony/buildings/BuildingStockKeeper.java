@@ -54,9 +54,12 @@ public class BuildingStockKeeper extends AbstractBuilding {
         return ModConfig.SERVER.stockTickerRequiredLevel.get();
     }
 
-    /** Gets the building level required for restock policy functionality */
+    /**
+     * Gets the building level required for restock policy functionality (stock
+     * ticker level + 1)
+     */
     public static int getRestockPolicyRequiredLevel() {
-        return ModConfig.SERVER.restockPolicyRequiredLevel.get();
+        return getStockTickerRequiredLevel() + 1;
     }
 
     /** Gets the default interval for inventory signature refresh checks */

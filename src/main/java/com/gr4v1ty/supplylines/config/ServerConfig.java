@@ -23,7 +23,6 @@ public final class ServerConfig {
 
     // === Building Levels ===
     public final IntValue stockTickerRequiredLevel;
-    public final IntValue restockPolicyRequiredLevel;
 
     // === Limits ===
     public final IntValue auxiliaryScanRadius;
@@ -143,13 +142,9 @@ public final class ServerConfig {
 
         stockTickerRequiredLevel = builder
                 .comment("Building level required for Stock Ticker functionality.",
-                        "Enables access to the colony stock network.")
-                .defineInRange("stockTickerRequiredLevel", 4, 1, 5);
-
-        restockPolicyRequiredLevel = builder
-                .comment("Building level required for Restock Policy functionality.",
-                        "Enables automatic restocking from remote suppliers.")
-                .defineInRange("restockPolicyRequiredLevel", 5, 1, 5);
+                        "Enables access to the colony stock network.",
+                        "Restock Policy functionality unlocks at the next level (this + 1).")
+                .defineInRange("stockTickerRequiredLevel", 4, 1, 4);
 
         builder.pop();
 

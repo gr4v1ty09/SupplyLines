@@ -31,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -73,19 +74,24 @@ public final class RestockManager {
 
     /**
      * In-flight restock orders for display board. Transient - not persisted to NBT.
+     * Supports multiple orders per item type for proper arrival matching.
      */
-    private final Map<ItemMatch.ItemStackKey, RestockOrder> activeOrders = new LinkedHashMap<>();
+    private final Map<ItemMatch.ItemStackKey, List<RestockOrder>> activeOrders = new LinkedHashMap<>();
 
     /**
      * Represents an in-flight restock order for display purposes.
      */
     public static class RestockOrder {
+        private static final AtomicLong ORDER_COUNTER = new AtomicLong(0);
+
+        public final long orderId;
         public final ItemStack item;
         public final int quantity;
         public final long requestedAtTick;
         public final UUID supplierNetworkId;
 
         public RestockOrder(ItemStack item, int quantity, long requestedAtTick, UUID supplierNetworkId) {
+            this.orderId = ORDER_COUNTER.incrementAndGet();
             this.item = item.copy();
             this.quantity = quantity;
             this.requestedAtTick = requestedAtTick;
@@ -295,17 +301,16 @@ public final class RestockManager {
 
             // Calculate deficit
             int deficit = targetQuantity - (int) Math.min(localStock, Integer.MAX_VALUE);
+            ItemMatch.ItemStackKey itemKey = new ItemMatch.ItemStackKey(policyItem);
+            List<RestockOrder> existingOrders = activeOrders.get(itemKey);
             if (deficit <= 0) {
-                // Already at or above target, remove any active order for this item
-                activeOrders.remove(new ItemMatch.ItemStackKey(policyItem));
+                // Already at or above target, remove any active orders for this item
+                activeOrders.remove(itemKey);
                 continue;
             }
 
             // Skip if we already have an active order for this item
-            ItemMatch.ItemStackKey itemKey = new ItemMatch.ItemStackKey(policyItem);
-            if (activeOrders.containsKey(itemKey)) {
-                LOGGER.debug("{} Skipping restock for {} - order already in flight", LogTags.ORDERING,
-                        policyItem.getDisplayName().getString());
+            if (existingOrders != null && !existingOrders.isEmpty()) {
                 continue;
             }
 
@@ -358,11 +363,15 @@ public final class RestockManager {
                 // Track individual items for display board
                 for (PendingRestockRequest req : requests) {
                     ItemMatch.ItemStackKey itemKey = new ItemMatch.ItemStackKey(req.item);
-                    activeOrders.put(itemKey, new RestockOrder(req.item, req.quantity, now, supplier.getNetworkId()));
+                    List<RestockOrder> orderList = activeOrders.computeIfAbsent(itemKey, k -> new ArrayList<>());
+                    RestockOrder newOrder = new RestockOrder(req.item, req.quantity, now, supplier.getNetworkId());
+                    orderList.add(newOrder);
+                    LOGGER.debug("{} Order tracked: {} x{} orderId={} totalActiveForItem={}", LogTags.ORDERING,
+                            req.item.getDisplayName().getString(), req.quantity, newOrder.orderId, orderList.size());
                 }
 
                 // Log batched request
-                LOGGER.info("{} Batched {} item type(s) to supplier network {} (address: {}): {}", LogTags.ORDERING,
+                LOGGER.debug("{} Batched {} item type(s) to supplier network {} (address: {}): {}", LogTags.ORDERING,
                         requests.size(), supplier.getNetworkId(), destinationAddress,
                         requests.stream().map(r -> r.item.getDisplayName().getString() + " x" + r.quantity)
                                 .collect(Collectors.joining(", ")));
@@ -430,8 +439,9 @@ public final class RestockManager {
         }
 
         // Build display lines sorted by ETA (earliest first)
-        List<RestockOrder> sortedOrders = new ArrayList<>(activeOrders.values());
-        sortedOrders.sort(Comparator.comparingLong(RestockOrder::getEstimatedArrivalTick));
+        // Flatten all order lists into a single list
+        List<RestockOrder> sortedOrders = activeOrders.values().stream().flatMap(List::stream)
+                .sorted(Comparator.comparingLong(RestockOrder::getEstimatedArrivalTick)).collect(Collectors.toList());
 
         List<Component> lines = new ArrayList<>();
 
@@ -478,17 +488,29 @@ public final class RestockManager {
     }
 
     /**
-     * Removes orders that are past ETA + buffer time.
+     * Removes orders that are past ETA + buffer time (fallback for failed
+     * deliveries).
      */
     private void cleanupExpiredOrders(long now) {
-        Iterator<Map.Entry<ItemMatch.ItemStackKey, RestockOrder>> it = activeOrders.entrySet().iterator();
+        Iterator<Map.Entry<ItemMatch.ItemStackKey, List<RestockOrder>>> it = activeOrders.entrySet().iterator();
 
         while (it.hasNext()) {
-            RestockOrder order = it.next().getValue();
-            long expiryTick = order.getEstimatedArrivalTick() + getOrderExpiryBufferTicks();
-            if (now > expiryTick) {
-                LOGGER.debug("{} Expiring restock order for {} (past ETA)", LogTags.ORDERING,
-                        order.item.getDisplayName().getString());
+            Map.Entry<ItemMatch.ItemStackKey, List<RestockOrder>> entry = it.next();
+            List<RestockOrder> orders = entry.getValue();
+
+            // Remove expired orders from the list
+            orders.removeIf(order -> {
+                long expiryTick = order.getEstimatedArrivalTick() + getOrderExpiryBufferTicks();
+                if (now > expiryTick) {
+                    LOGGER.warn("{} Expiring restock order for {} (past ETA)", LogTags.ORDERING,
+                            order.item.getDisplayName().getString());
+                    return true;
+                }
+                return false;
+            });
+
+            // Remove the entry if no orders remain for this item
+            if (orders.isEmpty()) {
                 it.remove();
             }
         }
@@ -498,6 +520,44 @@ public final class RestockManager {
      * Gets the count of currently active restock orders.
      */
     public int getActiveOrderCount() {
-        return activeOrders.size();
+        return activeOrders.values().stream().mapToInt(List::size).sum();
+    }
+
+    /**
+     * Called when stock levels increase in the local network. Attempts to match
+     * arrivals to active orders using: 1. Exact quantity match first 2. FIFO
+     * fallback if no exact match
+     *
+     * @param itemKey
+     *            The item that arrived
+     * @param quantityArrived
+     *            The quantity increase detected
+     */
+    public void onStockArrival(ItemMatch.ItemStackKey itemKey, long quantityArrived) {
+        List<RestockOrder> orders = activeOrders.get(itemKey);
+        if (orders == null || orders.isEmpty()) {
+            return;
+        }
+
+        // Pass 1: Try exact quantity match
+        for (Iterator<RestockOrder> it = orders.iterator(); it.hasNext();) {
+            RestockOrder order = it.next();
+            if (order.quantity == quantityArrived) {
+                it.remove();
+                if (orders.isEmpty()) {
+                    activeOrders.remove(itemKey);
+                }
+                return;
+            }
+        }
+
+        // Pass 2: FIFO fallback - clear oldest order if quantity >= order amount
+        RestockOrder oldest = orders.get(0); // List maintains insertion order
+        if (quantityArrived >= oldest.quantity) {
+            orders.remove(0);
+            if (orders.isEmpty()) {
+                activeOrders.remove(itemKey);
+            }
+        }
     }
 }

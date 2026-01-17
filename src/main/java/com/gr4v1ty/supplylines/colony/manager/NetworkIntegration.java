@@ -63,7 +63,7 @@ public final class NetworkIntegration {
     }
 
     public void updateStockSnapshotIfDue(Level level, @Nullable BlockPos stockTickerPos, int stockSnapshotIntervalTicks,
-            @Nullable Runnable stockChangeCallback) {
+            @Nullable StockChangeListener stockChangeListener) {
         long now = level.getGameTime();
         if (now <= 0L) {
             return;
@@ -132,12 +132,24 @@ public final class NetworkIntegration {
             } else {
                 stockChanged = !newStockLevels.isEmpty();
             }
+
+            // Compute stock increases (deltas) for arrival detection
+            Map<ItemMatch.ItemStackKey, Long> stockIncreases = new HashMap<>();
+            for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : newStockLevels.entrySet()) {
+                long oldQty = this.stockLevels.getOrDefault(entry.getKey(), 0L);
+                long newQty = entry.getValue();
+                if (newQty > oldQty) {
+                    stockIncreases.put(entry.getKey(), newQty - oldQty);
+                }
+            }
+
             this.previousStockLevels.clear();
             this.previousStockLevels.putAll(this.stockLevels);
             this.stockLevels.clear();
             this.stockLevels.putAll(newStockLevels);
-            if (stockChanged && stockChangeCallback != null) {
-                stockChangeCallback.run();
+
+            if (stockChangeListener != null && !stockIncreases.isEmpty()) {
+                stockChangeListener.onStockChanged(stockIncreases);
             }
         } catch (Exception e) {
             LOGGER.error("{} Failed to update stock snapshot from Stock Ticker", LogTags.INVENTORY, e);

@@ -525,7 +525,13 @@ public class BuildingStockKeeper extends AbstractBuilding {
                 ? this.skillManager.getStockSnapshotIntervalTicks()
                 : getDefaultStockSnapshotIntervalTicks();
         this.networkIntegration.updateStockSnapshotIfDue(level, this.blockScanner.getStockTickerPos(), interval,
-                () -> this.reassignPendingRequestsOnStockChange(level));
+                (increases) -> {
+                    // Notify RestockManager of stock increases to clear matching orders
+                    for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : increases.entrySet()) {
+                        this.restockManager.onStockArrival(entry.getKey(), entry.getValue());
+                    }
+                    this.reassignPendingRequestsOnStockChange(level);
+                });
     }
 
     /**

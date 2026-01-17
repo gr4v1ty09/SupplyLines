@@ -13,11 +13,11 @@ public final class ServerConfig {
     public final IntValue defaultRescanIntervalTicks;
     public final IntValue defaultStockSnapshotIntervalTicks;
     public final IntValue defaultRestockIntervalTicks;
-    public final LongValue stagingTimeoutTicks;
-    public final LongValue bufferWindowTicks;
+    public final IntValue stagingTimeoutTicks;
+    public final IntValue bufferWindowTicks;
     public final IntValue displayUpdateIntervalTicks;
-    public final LongValue defaultDeliveryTicks;
-    public final LongValue orderExpiryBufferTicks;
+    public final IntValue defaultDeliveryTicks;
+    public final IntValue orderExpiryBufferTicks;
     public final IntValue defaultInvSigIntervalTicks;
     public final IntValue defaultStagingProcessIntervalTicks;
 
@@ -100,11 +100,11 @@ public final class ServerConfig {
 
         stagingTimeoutTicks = builder
                 .comment("Timeout for staging requests before cancellation (ticks).", "Default 1200 = 60 seconds.")
-                .defineInRange("stagingTimeoutTicks", 1200L, 200L, 6000L);
+                .defineInRange("stagingTimeoutTicks", 1200, 200, 6000);
 
         bufferWindowTicks = builder
                 .comment("Window for batching multiple requests together (ticks).", "Default 60 = 3 seconds.")
-                .defineInRange("bufferWindowTicks", 60L, 10L, 300L);
+                .defineInRange("bufferWindowTicks", 60, 10, 300);
 
         displayUpdateIntervalTicks = builder
                 .comment("Interval for display board updates (ticks).", "Default 100 = 5 seconds.")
@@ -112,12 +112,13 @@ public final class ServerConfig {
 
         defaultDeliveryTicks = builder
                 .comment("Default assumed delivery time for ETA calculations (ticks).", "Default 400 = 20 seconds.")
-                .defineInRange("defaultDeliveryTicks", 400L, 100L, 2400L);
+                .defineInRange("defaultDeliveryTicks", 400, 100, 2400);
 
         orderExpiryBufferTicks = builder
-                .comment("Extra buffer time after ETA before removing orders from display (ticks).",
-                        "Default 200 = 10 seconds.")
-                .defineInRange("orderExpiryBufferTicks", 200L, 50L, 1200L);
+                .comment("Fallback timeout after ETA before expiring undetected orders (ticks).",
+                        "With postbox watching, this is only used when arrivals can't be detected.",
+                        "Default 12000 = 10 minutes. Increase for very long-distance deliveries.")
+                .defineInRange("orderExpiryBufferTicks", 12000, 200, 72000);
 
         defaultInvSigIntervalTicks = builder
                 .comment("Interval for inventory signature refresh checks (ticks).", "Default 40 = 2 seconds.")

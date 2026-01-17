@@ -7,7 +7,7 @@ public final class ModPlacementHandlers {
     }
 
     public static void register() {
-        PlacementHandlers.add(new CreateTrainBlockPreservationHandler());
+        PlacementHandlers.add(new CreateBlockPreservationHandler());
         PlacementHandlers.add(new CreateMultiblockPlacementHandler());
     }
 }

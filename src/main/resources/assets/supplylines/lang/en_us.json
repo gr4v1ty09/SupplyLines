@@ -40,5 +40,8 @@
   "com.supplylines.research.supplylines.stock_keeping.subtitle": "Establish supply line logistics",
 
   "com.supplylines.research.supplylines.expanded_logistics.name": "Expanded Logistics",
-  "com.supplylines.research.supplylines.expanded_logistics.subtitle": "Manage more item types in restock policies"
+  "com.supplylines.research.supplylines.expanded_logistics.subtitle": "Manage more item types in restock policies",
+
+  "com.supplylines.research.effects.blockhutstockkeeper.description": "Unlocks the Stock Keeper Hut",
+  "com.supplylines.research.effects.restockpolicylimit.description": "Increases restock policy limit"
 }

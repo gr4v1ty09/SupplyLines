@@ -3,7 +3,7 @@
   "researchLevel": 1,
   "name": "com.supplylines.research.supplylines.stock_keeping.name",
   "subtitle": "com.supplylines.research.supplylines.stock_keeping.subtitle",
-  "icon": "supplylines:blockhutstockkeeper",
+  "icon": "supplylines:stock_keeper_hut",
   "requirements": [
     {
       "type": "minecolonies:single-building",
@@ -18,12 +18,12 @@
   ],
   "costs": [
     {
-      "type": "minecolonies:simple-item-cost",
+      "type": "minecolonies:item_simple",
       "item": "create:andesite_casing",
       "quantity": 1
     },
     {
-      "type": "minecolonies:simple-item-cost",
+      "type": "minecolonies:item_simple",
       "item": "minecraft:chest",
       "quantity": 2
     }

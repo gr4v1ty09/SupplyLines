@@ -8,18 +8,18 @@
   "requirements": [
     {
       "type": "minecolonies:single-building",
-      "building": "supplylines:stockkeeper",
+      "building": "supplylines:stock_keeper_hut",
       "level": 5
     }
   ],
   "costs": [
     {
-      "type": "minecolonies:simple-item-cost",
+      "type": "minecolonies:item_simple",
       "item": "create:brass_casing",
       "quantity": 16
     },
     {
-      "type": "minecolonies:simple-item-cost",
+      "type": "minecolonies:item_simple",
       "item": "minecraft:ender_pearl",
       "quantity": 4
     }

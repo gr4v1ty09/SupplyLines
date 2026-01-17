@@ -37,6 +37,13 @@ public final class ServerConfig {
     public final DoubleValue arriveDistanceSq;
     public final IntValue inspectDurationTicks;
 
+    // === Idle Behavior ===
+    public final BooleanValue enableIdleWander;
+    public final IntValue idleWanderChance;
+    public final IntValue idleWanderCooldown;
+    public final IntValue idleInspectDuration;
+    public final BooleanValue randomPatrol;
+
     // === Skill Scaling: Rescan ===
     public final IntValue rescanBase;
     public final IntValue rescanMin;
@@ -180,6 +187,25 @@ public final class ServerConfig {
                 .comment("Duration of inspection pause at patrol points (state machine ticks).",
                         "Actual game ticks = this value * stateMachineTickRate.")
                 .defineInRange("inspectDurationTicks", 4, 1, 20);
+
+        builder.pop();
+
+        // Idle Behavior
+        builder.comment("Stock Keeper idle behavior").push("idleBehavior");
+
+        enableIdleWander = builder.comment("Stock Keeper occasionally checks on racks when not busy")
+                .define("enableIdleWander", true);
+
+        idleWanderChance = builder.comment("How often to wander (higher = more frequent, 0 = never)")
+                .defineInRange("idleWanderChance", 3, 0, 100);
+
+        idleWanderCooldown = builder.comment("Minimum seconds between wanders").defineInRange("idleWanderCooldown", 10,
+                1, 60);
+
+        idleInspectDuration = builder.comment("Seconds spent looking at each location")
+                .defineInRange("idleInspectDuration", 3, 1, 10);
+
+        randomPatrol = builder.comment("Patrol locations in random order").define("randomPatrol", true);
 
         builder.pop();
 

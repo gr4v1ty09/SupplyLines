@@ -41,11 +41,42 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         return ModConfig.SERVER.inspectDurationTicks.get();
     }
 
+    /** Returns whether idle wander is enabled */
+    private static boolean isIdleWanderEnabled() {
+        return ModConfig.SERVER.enableIdleWander.get();
+    }
+
+    /** Returns idle wander chance (0-100) */
+    private static int getIdleWanderChance() {
+        return ModConfig.SERVER.idleWanderChance.get();
+    }
+
+    /** Returns cooldown in game ticks (config is in seconds) */
+    private static int getIdleWanderCooldownTicks() {
+        return ModConfig.SERVER.idleWanderCooldown.get() * 20;
+    }
+
+    /** Returns inspect duration in state machine ticks (config is in seconds) */
+    private static int getIdleInspectDuration() {
+        int tickRate = getStateMachineTickRate();
+        if (tickRate <= 0) {
+            tickRate = 20;
+        }
+        return (ModConfig.SERVER.idleInspectDuration.get() * 20) / tickRate;
+    }
+
+    /** Returns whether patrol should be randomized */
+    private static boolean isPatrolRandomized() {
+        return ModConfig.SERVER.randomPatrol.get();
+    }
+
     private enum Phase {
         WALKING, // Walking to main work target
         WORKING, // Main work at stock ticker
-        PATROLLING, // Walking to a point of interest
-        INSPECTING // Brief pause at point of interest
+        PATROLLING, // Walking to a point of interest (order-triggered)
+        INSPECTING, // Brief pause at point of interest
+        IDLE_WANDER, // Walking to random inspection point (no orders)
+        IDLE_INSPECT // Brief pause during idle wander
     }
 
     private Phase phase = Phase.WALKING;
@@ -54,6 +85,8 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
     private int tickCounter = 0;
     private int inspectTicks = 0;
     private int patrolIndex = 0;
+    private long lastIdleWanderTick = 0;
+    private int nextArmSwingTick = 0;
     private final Random rnd = new Random();
 
     @SuppressWarnings({"unchecked"})
@@ -61,6 +94,10 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         super(job);
         super.registerTargets(new TickingTransition[]{
                 new AITarget<IAIState>(AIWorkerState.IDLE, this::idleProviderLoop, getStateMachineTickRate())});
+
+        // Random initial offset to prevent synchronized behavior across multiple SKs
+        this.tickCounter = rnd.nextInt(Math.max(1, getStateMachineTickRate()));
+        this.nextArmSwingTick = rnd.nextInt(60);
     }
 
     @Override
@@ -111,16 +148,11 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                     }
                 }
 
-                // Look at work target
-                if (workTarget != null && tickCounter % 20 == 0) {
-                    entity.getLookControl().setLookAt(workTarget.getX() + 0.5, workTarget.getY() + 0.5,
-                            workTarget.getZ() + 0.5);
-                }
+                // Look at work target with occasional variation
+                handleLookAtBehavior(entity, hut);
 
-                // Arm swing animation
-                if (tickCounter % 60 == 0 && rnd.nextBoolean()) {
-                    entity.swing(InteractionHand.MAIN_HAND, true);
-                }
+                // Arm swing animation with variance
+                handleArmSwing(entity);
 
                 // Check if patrol requested (triggered by order placement)
                 if (hut != null && hut.consumePatrolRequest()) {
@@ -128,6 +160,17 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                     if (nextPatrol != null) {
                         patrolTarget = nextPatrol;
                         phase = Phase.PATROLLING;
+                        break;
+                    }
+                }
+
+                // Idle wander check (only when no pending work)
+                if (shouldTriggerIdleWander(hut)) {
+                    BlockPos wanderTarget = selectIdleWanderTarget(hut, entity.blockPosition());
+                    if (wanderTarget != null) {
+                        patrolTarget = wanderTarget;
+                        phase = Phase.IDLE_WANDER;
+                        lastIdleWanderTick = this.world.getGameTime();
                         break;
                     }
                 }
@@ -179,6 +222,50 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                     resetToWalking();
                 }
                 break;
+
+            case IDLE_WANDER :
+                if (patrolTarget == null) {
+                    resetToWalking();
+                    break;
+                }
+
+                double idleDistSq = entity.distanceToSqr(patrolTarget.getX() + 0.5, patrolTarget.getY() + 0.5,
+                        patrolTarget.getZ() + 0.5);
+
+                if (idleDistSq <= getArriveDistanceSq()) {
+                    entity.getNavigation().stop();
+                    phase = Phase.IDLE_INSPECT;
+                    inspectTicks = 0;
+                } else {
+                    entity.getNavigation().moveTo(patrolTarget.getX() + 0.5, patrolTarget.getY(),
+                            patrolTarget.getZ() + 0.5, getWalkSpeed());
+                }
+                break;
+
+            case IDLE_INSPECT :
+                // Check drift
+                if (checkDriftAndReset(entity, patrolTarget)) {
+                    break;
+                }
+
+                // Look at the inspection target
+                if (patrolTarget != null) {
+                    entity.getLookControl().setLookAt(patrolTarget.getX() + 0.5, patrolTarget.getY() + 0.5,
+                            patrolTarget.getZ() + 0.5);
+                }
+
+                // Occasional arm swing while inspecting
+                if (inspectTicks % 30 == 0 && rnd.nextInt(100) < 30) {
+                    entity.swing(InteractionHand.MAIN_HAND, true);
+                }
+
+                inspectTicks++;
+
+                // Done inspecting, return to work
+                if (inspectTicks >= getIdleInspectDuration()) {
+                    resetToWalking();
+                }
+                break;
         }
         return null;
     }
@@ -206,6 +293,121 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         patrolTarget = null;
         workTarget = null;
         phase = Phase.WALKING;
+    }
+
+    /**
+     * Determines if idle wander should be triggered.
+     */
+    private boolean shouldTriggerIdleWander(BuildingStockKeeper hut) {
+        if (!isIdleWanderEnabled()) {
+            return false;
+        }
+        if (hut == null || this.world == null) {
+            return false;
+        }
+
+        // Check cooldown
+        long now = this.world.getGameTime();
+        if (now - lastIdleWanderTick < getIdleWanderCooldownTicks()) {
+            return false;
+        }
+
+        // Random chance
+        return rnd.nextInt(100) < getIdleWanderChance();
+    }
+
+    /**
+     * Selects a random target for idle wandering.
+     */
+    private BlockPos selectIdleWanderTarget(BuildingStockKeeper hut, BlockPos currentPos) {
+        if (hut == null) {
+            return null;
+        }
+
+        List<BlockPos> candidates = new ArrayList<>();
+
+        // Add display board (high priority for "checking status")
+        BlockPos displayBoard = hut.getDisplayBoardPos();
+        if (displayBoard != null) {
+            candidates.add(displayBoard);
+            candidates.add(displayBoard); // Double weight
+        }
+
+        // Add random subset of racks
+        List<BlockPos> racks = hut.getRackPositions();
+        if (!racks.isEmpty()) {
+            int count = Math.min(2, racks.size());
+            for (int i = 0; i < count; i++) {
+                candidates.add(racks.get(rnd.nextInt(racks.size())));
+            }
+        }
+
+        // Add belt positions
+        candidates.addAll(hut.getBeltPositions());
+
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        // Filter out positions too close
+        List<BlockPos> validCandidates = new ArrayList<>();
+        for (BlockPos pos : candidates) {
+            double distSq = currentPos.distSqr(pos);
+            if (distSq > getArriveDistanceSq() * 2) {
+                validCandidates.add(pos);
+            }
+        }
+
+        if (validCandidates.isEmpty()) {
+            return null;
+        }
+
+        // Random selection
+        return validCandidates.get(rnd.nextInt(validCandidates.size()));
+    }
+
+    /**
+     * Handles look-at behavior with variety.
+     */
+    private void handleLookAtBehavior(AbstractEntityCitizen entity, BuildingStockKeeper hut) {
+        // Only update look direction periodically
+        if (tickCounter % 20 != 0) {
+            return;
+        }
+
+        // Random choice: work target (50%), display board (20%), belt (20%), no change
+        // (10%)
+        int choice = rnd.nextInt(10);
+        BlockPos lookTarget = null;
+
+        if (choice < 5 && workTarget != null) {
+            lookTarget = workTarget;
+        } else if (choice < 7 && hut != null && hut.getDisplayBoardPos() != null) {
+            lookTarget = hut.getDisplayBoardPos();
+        } else if (choice < 9 && hut != null && !hut.getBeltPositions().isEmpty()) {
+            List<BlockPos> belts = hut.getBeltPositions();
+            lookTarget = belts.get(rnd.nextInt(belts.size()));
+        }
+        // choice 9 = don't change look direction (natural pause)
+
+        if (lookTarget != null) {
+            entity.getLookControl().setLookAt(lookTarget.getX() + 0.5, lookTarget.getY() + 0.5,
+                    lookTarget.getZ() + 0.5);
+        }
+    }
+
+    /**
+     * Handles arm swing with randomized timing.
+     */
+    private void handleArmSwing(AbstractEntityCitizen entity) {
+        if (tickCounter >= nextArmSwingTick) {
+            if (rnd.nextBoolean()) {
+                entity.swing(InteractionHand.MAIN_HAND, true);
+            }
+            // Schedule next swing with variance: 40-80 ticks (at 20 tick rate = 2-4
+            // seconds)
+            nextArmSwingTick = tickCounter + 40 + rnd.nextInt(40);
+        }
     }
 
     /**
@@ -246,9 +448,13 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
             return null;
         }
 
-        // Cycle through candidates
-        patrolIndex = (patrolIndex + 1) % validCandidates.size();
-        return validCandidates.get(patrolIndex);
+        // Randomized or sequential selection based on config
+        if (isPatrolRandomized()) {
+            return validCandidates.get(rnd.nextInt(validCandidates.size()));
+        } else {
+            patrolIndex = (patrolIndex + 1) % validCandidates.size();
+            return validCandidates.get(patrolIndex);
+        }
     }
 
     private BlockPos getWorkTarget(BuildingStockKeeper hut) {

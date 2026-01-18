@@ -116,7 +116,6 @@ public abstract class AbstractResolver<T extends IRequestable> implements IReque
 
     public final boolean canResolveRequest(@NotNull IRequestManager manager, @NotNull IRequest<? extends T> request) {
         LOGGER.debug("{} canResolveRequest {} state={}", LogTags.ORDERING, request.getId(), request.getState());
-        this.logCanResolveRequest(request);
         if (!this.hasComponents()) {
             LOGGER.debug("{} canResolveRequest: NO components for resolver {} (expected briefly on world load)",
                     LogTags.ORDERING, this.id.getIdentifier());
@@ -148,7 +147,6 @@ public abstract class AbstractResolver<T extends IRequestable> implements IReque
         } else {
             LOGGER.warn("{} canResolveRequest: Building is NULL!", LogTags.ORDERING);
         }
-        this.logCannotResolve(request);
         return false;
     }
 
@@ -156,7 +154,6 @@ public abstract class AbstractResolver<T extends IRequestable> implements IReque
     public final List<IToken<?>> attemptResolveRequest(@NotNull IRequestManager manager,
             @NotNull IRequest<? extends T> request) {
         LOGGER.debug("{} attemptResolve {} state={}", LogTags.FULFILLMENT, request.getId(), request.getState());
-        this.logAttemptResolveRequest(request);
         if (!this.hasComponents()) {
             LOGGER.error("{} No components registered for resolver {}", LogTags.ORDERING, this.id.getIdentifier());
             return ImmutableList.of();
@@ -166,12 +163,11 @@ public abstract class AbstractResolver<T extends IRequestable> implements IReque
             LOGGER.warn("{} No intake destination for requester: {}", LogTags.DELIVERY, request.getRequester());
             return ImmutableList.of();
         }
-        LOGGER.debug("{} attemptResolveRequest: destination = {}", LogTags.DELIVERY, dest.getInDimensionLocation());
         List<DeliveryPlanning.Pick> picks = this.pickFromRacks(request);
         int requiredCount = this.getRequiredCount(request);
         int pickedCount = picks != null ? picks.stream().mapToInt(p -> p.count).sum() : 0;
-        LOGGER.debug("{} attemptResolve {} - picks from racks: {} (total {} items, need {})", LogTags.DELIVERY,
-                request.getId(), picks != null ? picks.size() : "null", pickedCount, requiredCount);
+        LOGGER.debug("{} attemptResolve {} - dest={}, picks={} (have {} need {})", LogTags.DELIVERY, request.getId(),
+                dest.getInDimensionLocation(), picks != null ? picks.size() : 0, pickedCount, requiredCount);
 
         if (this.picksSatisfyRequest(picks, request)) {
             LOGGER.debug("{} attemptResolve {} - items available (picked {} >= required {}), returning empty list",
@@ -204,7 +200,6 @@ public abstract class AbstractResolver<T extends IRequestable> implements IReque
         }
 
         LOGGER.debug("{} attemptResolve {} - items not in racks, cannot stage", LogTags.ORDERING, request.getId());
-        this.logCannotFulfill(request);
         return null;
     }
 
@@ -356,14 +351,6 @@ public abstract class AbstractResolver<T extends IRequestable> implements IReque
     protected abstract boolean requestFromStockNetwork(BuildingStockKeeper building, IRequest<? extends T> request);
 
     protected abstract double calculateSkillXP(IRequest<? extends T> request);
-
-    protected abstract void logCanResolveRequest(IRequest<? extends T> request);
-
-    protected abstract void logCannotResolve(IRequest<? extends T> request);
-
-    protected abstract void logAttemptResolveRequest(IRequest<? extends T> request);
-
-    protected abstract void logCannotFulfill(IRequest<? extends T> request);
 
     protected abstract String getRequestDescription(IRequest<? extends T> request);
 

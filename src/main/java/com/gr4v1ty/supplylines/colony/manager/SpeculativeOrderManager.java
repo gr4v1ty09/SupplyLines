@@ -188,7 +188,6 @@ public final class SpeculativeOrderManager {
 
         // Research unlock check
         if (!isSpeculativeOrderingResearched(colony)) {
-            LOGGER.debug("{} Speculative ordering not yet researched", LogTags.ORDERING);
             return;
         }
 

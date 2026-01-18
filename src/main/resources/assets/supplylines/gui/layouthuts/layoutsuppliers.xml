@@ -13,9 +13,9 @@
             source="minecolonies:textures/gui/builderhut/builder_button_medium.png" color="black"/>
 
     <!-- Supplier List -->
-    <list id="suppliers" size="164 184" pos="16 54"
+    <list id="suppliers" size="164 168" pos="16 54"
           emptytext="$(com.supplylines.gui.stockkeeper.suppliers.empty)" emptycolor="black">
-        <box size="100% 72" linewidth="1" linecolor="#a0a0a0">
+        <box size="100% 88" linewidth="1" linecolor="#a0a0a0">
             <!-- Row 1: Priority, Label input, buttons -->
             <text id="priority" size="18 14" pos="4 6" color="black"/>
             <input id="label" size="82 16" pos="22 4" maxlength="24"/>
@@ -37,6 +37,14 @@
             <!-- Row 3: Address input -->
             <text size="30 14" pos="4 48" color="gray" label="Addr:"/>
             <input id="address" size="110 16" pos="36 46" maxlength="32"/>
+
+            <!-- Row 4: Speculative ordering toggle -->
+            <text size="80 12" pos="4 68" color="gray"
+                  label="$(com.supplylines.gui.stockkeeper.suppliers.speculative)"/>
+            <checkbox id="speculative" pos="88 66" size="14 14"
+                      source="blockui:textures/gui/button_mini.png"
+                      disabled="blockui:textures/gui/button_mini_disabled.png"
+                      checkmark="blockui:textures/gui/overlay_mini_check.png"/>
         </box>
     </list>
 </window>

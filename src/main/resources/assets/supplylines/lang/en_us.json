@@ -19,6 +19,8 @@
   "com.supplylines.gui.stockkeeper.suppliers.status.unknown": "Unknown",
   "com.supplylines.gui.stockkeeper.suppliers.status.connected": "Connected",
   "com.supplylines.gui.stockkeeper.suppliers.status.disconnected": "Disconnected",
+  "com.supplylines.gui.stockkeeper.suppliers.speculative": "Speculative",
+  "com.supplylines.gui.stockkeeper.suppliers.speculative.warning": "[Stock Keeper] Warning: Speculative ordering enabled for '%s'. The Stock Keeper can now order any item the colony requests from this network.",
 
   "item.supplylines.scepterstockkeeper": "Stock Network Scepter",
   "com.supplylines.scepter.networked": "Linked network %s",
@@ -42,6 +44,12 @@
   "com.supplylines.research.supplylines.expanded_logistics.name": "Expanded Logistics",
   "com.supplylines.research.supplylines.expanded_logistics.subtitle": "Manage more item types in restock policies",
 
+  "com.supplylines.research.supplylines.speculative_ordering.name": "Speculative Ordering",
+  "com.supplylines.research.supplylines.speculative_ordering.subtitle": "Enable demand-driven ordering from remote suppliers",
+
   "com.supplylines.research.effects.blockhutstockkeeper.description": "Unlocks the Stock Keeper Hut",
-  "com.supplylines.research.effects.restockpolicylimit.description": "Increases restock policy limit"
+  "com.supplylines.research.effects.restockpolicylimit.description": "Increases restock policy limit",
+  "com.supplylines.research.effects.speculativeordering.description": "Unlocks speculative ordering from remote supplier networks",
+
+  "com.supplylines.gui.stockkeeper.suppliers.speculative.locked": "Requires Speculative Ordering research"
 }

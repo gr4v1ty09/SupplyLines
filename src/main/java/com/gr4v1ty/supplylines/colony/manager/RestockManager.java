@@ -4,7 +4,6 @@ import com.gr4v1ty.supplylines.colony.buildings.modules.RestockPolicyModule;
 import com.gr4v1ty.supplylines.colony.buildings.modules.RestockPolicyModule.PolicyEntry;
 import com.gr4v1ty.supplylines.colony.buildings.modules.SuppliersModule;
 import com.gr4v1ty.supplylines.colony.buildings.modules.SuppliersModule.SupplierEntry;
-import com.gr4v1ty.supplylines.compat.create.DisplayBoardWriter;
 import com.gr4v1ty.supplylines.config.ModConfig;
 import com.gr4v1ty.supplylines.util.ItemMatch;
 import com.gr4v1ty.supplylines.util.LogTags;
@@ -15,9 +14,6 @@ import com.simibubi.create.content.logistics.packager.InventorySummary;
 import com.simibubi.create.content.logistics.packagerLink.LogisticallyLinkedBehaviour;
 import com.simibubi.create.content.logistics.packagerLink.LogisticsManager;
 import com.simibubi.create.content.logistics.stockTicker.PackageOrderWithCrafts;
-import net.minecraft.ChatFormatting;
-import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
@@ -25,7 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,11 +38,6 @@ import java.util.stream.Collectors;
 public final class RestockManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(RestockManager.class);
 
-    /** Gets the display board update interval from config */
-    private static int getDisplayUpdateIntervalTicks() {
-        return ModConfig.SERVER.displayUpdateIntervalTicks.get();
-    }
-
     /** Gets the default assumed delivery time for ETA calculation from config */
     private static long getDefaultDeliveryTicks() {
         return ModConfig.SERVER.defaultDeliveryTicks.get();
@@ -57,20 +48,9 @@ public final class RestockManager {
         return ModConfig.SERVER.orderExpiryBufferTicks.get();
     }
 
-    /** Gets the item name truncation length from config */
-    private static int getItemNameTruncation() {
-        return ModConfig.SERVER.itemNameTruncation.get();
-    }
-
-    /** Gets the ETA format threshold in seconds from config */
-    private static int getEtaFormatThresholdSeconds() {
-        return ModConfig.SERVER.etaFormatThresholdSeconds.get();
-    }
-
     @SuppressWarnings("unused")
     private final IColony colony;
     private long lastRestockCheckTick = Long.MIN_VALUE;
-    private long lastDisplayUpdateTick = Long.MIN_VALUE;
 
     /**
      * In-flight restock orders for display board. Transient - not persisted to NBT.
@@ -81,12 +61,12 @@ public final class RestockManager {
     /**
      * Represents an in-flight restock order for display purposes.
      */
-    public static class RestockOrder {
+    public static class RestockOrder implements IncomingOrder {
         private static final AtomicLong ORDER_COUNTER = new AtomicLong(0);
 
         public final long orderId;
-        public final ItemStack item;
-        public final int quantity;
+        private final ItemStack item;
+        private final int quantity;
         public final long requestedAtTick;
         public final UUID supplierNetworkId;
 
@@ -98,6 +78,17 @@ public final class RestockManager {
             this.supplierNetworkId = supplierNetworkId;
         }
 
+        @Override
+        public ItemStack getItem() {
+            return item;
+        }
+
+        @Override
+        public int getQuantity() {
+            return quantity;
+        }
+
+        @Override
         public long getEstimatedArrivalTick() {
             return requestedAtTick + getDefaultDeliveryTicks();
         }
@@ -148,24 +139,15 @@ public final class RestockManager {
      *            Module containing supplier networks
      * @param localNetwork
      *            Integration for querying local stock levels
-     * @param displayBoardPos
-     *            Position of display board (may be null)
      * @param restockIntervalTicks
      *            Interval between restock checks
      */
     public void processRestockPoliciesIfDue(Level level, RestockPolicyModule policyModule,
-            SuppliersModule suppliersModule, NetworkIntegration localNetwork, @Nullable BlockPos displayBoardPos,
-            int restockIntervalTicks) {
+            SuppliersModule suppliersModule, NetworkIntegration localNetwork, int restockIntervalTicks) {
 
         long now = level.getGameTime();
         if (now <= 0L) {
             return;
-        }
-
-        // Update display board more frequently than restock checks
-        if (shouldUpdateDisplay(now)) {
-            updateDisplayBoard(level, displayBoardPos, now);
-            lastDisplayUpdateTick = now;
         }
 
         // Check if restock evaluation is due
@@ -200,11 +182,6 @@ public final class RestockManager {
         for (List<PendingRestockRequest> supplierRequests : bySupplier.values()) {
             sendBatchedRequest(level, supplierRequests, now);
         }
-    }
-
-    private boolean shouldUpdateDisplay(long now) {
-        return lastDisplayUpdateTick == Long.MIN_VALUE
-                || now - lastDisplayUpdateTick >= getDisplayUpdateIntervalTicks();
     }
 
     /**
@@ -426,68 +403,6 @@ public final class RestockManager {
     }
 
     /**
-     * Formats and writes active orders to the display board.
-     */
-    private void updateDisplayBoard(Level level, @Nullable BlockPos displayBoardPos, long now) {
-        if (displayBoardPos == null) {
-            return;
-        }
-
-        if (activeOrders.isEmpty()) {
-            DisplayBoardWriter.clearDisplay(level, displayBoardPos);
-            return;
-        }
-
-        // Build display lines sorted by ETA (earliest first)
-        // Flatten all order lists into a single list
-        List<RestockOrder> sortedOrders = activeOrders.values().stream().flatMap(List::stream)
-                .sorted(Comparator.comparingLong(RestockOrder::getEstimatedArrivalTick)).collect(Collectors.toList());
-
-        List<Component> lines = new ArrayList<>();
-
-        // Header line
-        lines.add(Component.literal("Incoming Shipments").withStyle(ChatFormatting.GOLD));
-
-        int maxNameLen = getItemNameTruncation();
-        for (RestockOrder order : sortedOrders) {
-            String itemName = truncateString(order.item.getDisplayName().getString(), maxNameLen);
-            int qty = order.quantity;
-            String eta = formatETA(order.getEstimatedArrivalTick() - now);
-
-            // Format: "ItemName x64 ~30s"
-            Component line = Component.literal(String.format("%-" + maxNameLen + "s x%-4d %s", itemName, qty, eta));
-            lines.add(line);
-        }
-
-        DisplayBoardWriter.writeLines(level, displayBoardPos, lines);
-    }
-
-    /**
-     * Formats remaining ticks as a human-readable ETA string.
-     */
-    private String formatETA(long ticksRemaining) {
-        if (ticksRemaining <= 0) {
-            return "arriving";
-        }
-        int seconds = (int) (ticksRemaining / 20);
-        if (seconds < getEtaFormatThresholdSeconds()) {
-            return "~" + seconds + "s";
-        }
-        int minutes = seconds / 60;
-        return "~" + minutes + "m";
-    }
-
-    /**
-     * Truncates a string to the specified maximum length.
-     */
-    private String truncateString(String s, int maxLen) {
-        if (s.length() <= maxLen) {
-            return s;
-        }
-        return s.substring(0, maxLen - 1) + ".";
-    }
-
-    /**
      * Removes orders that are past ETA + buffer time (fallback for failed
      * deliveries).
      */
@@ -521,6 +436,15 @@ public final class RestockManager {
      */
     public int getActiveOrderCount() {
         return activeOrders.values().stream().mapToInt(List::size).sum();
+    }
+
+    /**
+     * Gets all active restock orders for display purposes.
+     *
+     * @return Collection of active orders implementing IncomingOrder.
+     */
+    public Collection<IncomingOrder> getActiveOrders() {
+        return activeOrders.values().stream().flatMap(List::stream).collect(Collectors.toList());
     }
 
     /**

@@ -1,0 +1,33 @@
+{
+  "branch": "minecolonies:civilian",
+  "researchLevel": 3,
+  "parentResearch": "supplylines:supplylines/expanded_logistics",
+  "name": "com.supplylines.research.supplylines.speculative_ordering.name",
+  "subtitle": "com.supplylines.research.supplylines.speculative_ordering.subtitle",
+  "icon": "create:brass_casing",
+  "requirements": [
+    {
+      "type": "minecolonies:single-building",
+      "building": "supplylines:stock_keeper_hut",
+      "level": 5
+    }
+  ],
+  "costs": [
+    {
+      "type": "minecolonies:item_simple",
+      "item": "create:brass_casing",
+      "quantity": 8
+    },
+    {
+      "type": "minecolonies:item_simple",
+      "item": "minecraft:ender_pearl",
+      "quantity": 2
+    }
+  ],
+  "effects": [
+    {
+      "id": "supplylines:effects/speculativeordering",
+      "level": 1
+    }
+  ]
+}

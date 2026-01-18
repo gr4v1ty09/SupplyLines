@@ -24,6 +24,9 @@ public class SuppliersModuleView extends AbstractBuildingModuleView {
     /** Local copy of supplier entries from server. */
     private final List<SuppliersModule.SupplierEntry> suppliers = new ArrayList<>();
 
+    /** Whether speculative ordering research is unlocked. */
+    private boolean speculativeUnlocked = false;
+
     @Override
     public void deserialize(@NotNull FriendlyByteBuf buf) {
         suppliers.clear();
@@ -31,6 +34,7 @@ public class SuppliersModuleView extends AbstractBuildingModuleView {
         for (int i = 0; i < size; i++) {
             suppliers.add(SuppliersModule.SupplierEntry.fromBuf(buf));
         }
+        speculativeUnlocked = buf.readBoolean();
     }
 
     @Override
@@ -69,5 +73,14 @@ public class SuppliersModuleView extends AbstractBuildingModuleView {
      */
     public List<SuppliersModule.SupplierEntry> getSuppliers() {
         return suppliers;
+    }
+
+    /**
+     * Check if speculative ordering research is unlocked.
+     *
+     * @return true if the research has been completed.
+     */
+    public boolean isSpeculativeUnlocked() {
+        return speculativeUnlocked;
     }
 }

@@ -15,6 +15,14 @@ public final class ResearchEffects {
     public static final ResourceLocation RESTOCK_POLICY_LIMIT = new ResourceLocation(SupplyLines.MOD_ID,
             "effects/restockpolicylimit");
 
+    /**
+     * Effect that unlocks speculative ordering from remote supplier networks.
+     * Binary unlock: effect strength > 0 means unlocked.
+     */
+    @SuppressWarnings("removal")
+    public static final ResourceLocation SPECULATIVE_ORDERING = new ResourceLocation(SupplyLines.MOD_ID,
+            "effects/speculativeordering");
+
     private ResearchEffects() {
     }
 }

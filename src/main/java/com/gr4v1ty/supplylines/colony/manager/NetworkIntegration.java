@@ -63,7 +63,7 @@ public final class NetworkIntegration {
     }
 
     public void updateStockSnapshotIfDue(Level level, @Nullable BlockPos stockTickerPos, int stockSnapshotIntervalTicks,
-            @Nullable StockChangeListener stockChangeListener) {
+            @Nullable StockChangeListener stockChangeListener, boolean hasSpeculativeSuppliers) {
         long now = level.getGameTime();
         if (now <= 0L) {
             return;
@@ -104,9 +104,9 @@ public final class NetworkIntegration {
                     long existingQty = newStockLevels.getOrDefault(key, 0L);
                     newStockLevels.put(key, existingQty + (long) bigStack.count);
                 }
-            } else {
+            } else if (!hasSpeculativeSuppliers) {
                 LOGGER.warn(
-                        "{} Network summary is empty or null - no items in network or frequency not configured properly",
+                        "{} Network summary is empty and no speculative suppliers configured - Stock Keeper has no item sources",
                         LogTags.INVENTORY);
             }
             if (!this.previousStockLevels.isEmpty()) {

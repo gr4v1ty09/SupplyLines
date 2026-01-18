@@ -10,8 +10,10 @@ import com.gr4v1ty.supplylines.network.messages.RemoveSupplierMessage;
 import com.gr4v1ty.supplylines.network.messages.SetSupplierAddressMessage;
 import com.gr4v1ty.supplylines.network.messages.SetSupplierLabelMessage;
 import com.gr4v1ty.supplylines.network.messages.SetSupplierPriorityMessage;
+import com.gr4v1ty.supplylines.network.messages.SetSupplierSpeculativeMessage;
 import com.ldtteam.blockui.Pane;
 import com.ldtteam.blockui.controls.Button;
+import com.ldtteam.blockui.controls.CheckBox;
 import com.ldtteam.blockui.controls.Text;
 import com.ldtteam.blockui.controls.TextField;
 import com.ldtteam.blockui.views.ScrollingList;
@@ -60,6 +62,9 @@ public class SuppliersModuleWindow extends AbstractModuleWindow<SuppliersModuleV
 
     /** Button ID for moving supplier down in priority. */
     private static final String BUTTON_DOWN = "down";
+
+    /** Checkbox ID for speculative ordering toggle. */
+    private static final String CHECKBOX_SPECULATIVE = "speculative";
 
     /** The scrolling list of suppliers. */
     private final ScrollingList supplierList;
@@ -168,6 +173,23 @@ public class SuppliersModuleWindow extends AbstractModuleWindow<SuppliersModuleV
                     // TODO: Compute actual network status
                     statusLabel.setText(
                             Component.translatable("com.supplylines.gui.stockkeeper.suppliers.status.unknown"));
+                }
+
+                final CheckBox speculativeCheckbox = rowPane.findPaneOfTypeByID(CHECKBOX_SPECULATIVE, CheckBox.class);
+                if (speculativeCheckbox != null) {
+                    speculativeCheckbox.setChecked(entry.allowsSpeculativeOrders());
+                    if (moduleView.isSpeculativeUnlocked()) {
+                        speculativeCheckbox.setHandler(button -> {
+                            final boolean newValue = speculativeCheckbox.isChecked();
+                            if (newValue != entry.allowsSpeculativeOrders()) {
+                                ModNetwork.sendToServer(new SetSupplierSpeculativeMessage(buildingView,
+                                        entry.getNetworkId(), newValue));
+                                entry.setAllowSpeculativeOrders(newValue);
+                            }
+                        });
+                    } else {
+                        speculativeCheckbox.disable();
+                    }
                 }
             }
         });

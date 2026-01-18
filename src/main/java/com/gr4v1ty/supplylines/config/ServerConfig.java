@@ -87,6 +87,11 @@ public final class ServerConfig {
     public final IntValue itemNameTruncation;
     public final IntValue etaFormatThresholdSeconds;
 
+    // === Speculative Ordering ===
+    public final BooleanValue enableSpeculativeOrdering;
+    public final IntValue speculativeDelayTicks;
+    public final IntValue speculativeCheckIntervalTicks;
+
     ServerConfig(ForgeConfigSpec.Builder builder) {
         builder.comment("SupplyLines Server Configuration").push("server");
 
@@ -304,6 +309,30 @@ public final class ServerConfig {
                 .defineInRange("etaFormatThresholdSeconds", 60, 10, 300);
 
         builder.pop(); // display
+
+        // Speculative Ordering
+        builder.comment("Speculative Ordering Settings", "Allows Stock Keeper to order items from remote suppliers",
+                "when colony requests cannot be fulfilled locally.",
+                "Requires per-supplier opt-in via the 'Speculative' checkbox in the Suppliers UI.")
+                .push("speculativeOrdering");
+
+        enableSpeculativeOrdering = builder
+                .comment("Master switch for speculative ordering feature.",
+                        "When disabled, speculative ordering is completely off regardless of per-supplier settings.")
+                .define("enableSpeculativeOrdering", true);
+
+        speculativeDelayTicks = builder
+                .comment("Delay before triggering speculative order for unfulfilled request (ticks).",
+                        "Default 1200 = 60 seconds. Gives time for items to arrive normally.",
+                        "Shorter delays = more responsive but may order prematurely.")
+                .defineInRange("speculativeDelayTicks", 1200, 200, 12000);
+
+        speculativeCheckIntervalTicks = builder
+                .comment("How often to check for unfulfilled requests eligible for speculative ordering (ticks).",
+                        "Default 200 = 10 seconds.")
+                .defineInRange("speculativeCheckIntervalTicks", 200, 40, 1200);
+
+        builder.pop(); // speculativeOrdering
 
         builder.pop(); // server
     }

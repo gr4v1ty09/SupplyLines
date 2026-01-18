@@ -2,9 +2,12 @@ package com.gr4v1ty.supplylines.colony.buildings;
 
 import com.gr4v1ty.supplylines.colony.manager.NetworkIntegration;
 import com.gr4v1ty.supplylines.colony.manager.BuildingBlockScanner;
+import com.gr4v1ty.supplylines.colony.manager.DisplayBoardManager;
+import com.gr4v1ty.supplylines.colony.manager.IncomingOrder;
 import com.gr4v1ty.supplylines.colony.manager.RequestHandler;
 import com.gr4v1ty.supplylines.colony.manager.RestockManager;
 import com.gr4v1ty.supplylines.colony.manager.SkillManager;
+import com.gr4v1ty.supplylines.colony.manager.SpeculativeOrderManager;
 import com.gr4v1ty.supplylines.config.ModConfig;
 import com.gr4v1ty.supplylines.colony.manager.migration.PanelMigrationManager;
 import com.gr4v1ty.supplylines.colony.manager.migration.TrainStationMigrationManager;
@@ -100,6 +103,8 @@ public class BuildingStockKeeper extends AbstractBuilding {
     private SkillManager skillManager;
     private final RequestHandler requestHandler;
     private final RestockManager restockManager;
+    private final SpeculativeOrderManager speculativeOrderManager;
+    private final DisplayBoardManager displayBoardManager;
     private long lastInvSigTick = Long.MIN_VALUE;
     private long lastInvSig = Long.MIN_VALUE;
 
@@ -132,6 +137,8 @@ public class BuildingStockKeeper extends AbstractBuilding {
         this.networkIntegration = new NetworkIntegration(colony);
         this.requestHandler = new RequestHandler(colony, pos);
         this.restockManager = new RestockManager(colony);
+        this.speculativeOrderManager = new SpeculativeOrderManager(colony);
+        this.displayBoardManager = new DisplayBoardManager();
     }
 
     private void ensureRSRegistered(Level level) {
@@ -250,6 +257,8 @@ public class BuildingStockKeeper extends AbstractBuilding {
         }
         if (this.getBuildingLevel() >= getRestockPolicyRequiredLevel() && workerActive) {
             this.processRestockPoliciesIfDue(level);
+            this.processSpeculativeOrdersIfDue(level);
+            this.updateDisplayBoardIfDue(level);
         }
     }
 
@@ -268,7 +277,35 @@ public class BuildingStockKeeper extends AbstractBuilding {
                 : getDefaultRestockIntervalTicks();
 
         this.restockManager.processRestockPoliciesIfDue(level, policyModule, suppliersModule, this.networkIntegration,
-                this.blockScanner.getDisplayBoardPos(), interval);
+                interval);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void processSpeculativeOrdersIfDue(Level level) {
+        SuppliersModule suppliersModule = this.getFirstModuleOccurance(SuppliersModule.class);
+
+        if (suppliersModule == null) {
+            return;
+        }
+
+        int interval = ModConfig.SERVER.speculativeCheckIntervalTicks.get();
+
+        this.speculativeOrderManager.processSpeculativeOrdersIfDue(level, suppliersModule, this.networkIntegration,
+                interval);
+    }
+
+    private void updateDisplayBoardIfDue(Level level) {
+        long now = level.getGameTime();
+        if (now <= 0L) {
+            return;
+        }
+
+        // Combine orders from both managers
+        List<IncomingOrder> allOrders = new ArrayList<>();
+        allOrders.addAll(this.restockManager.getActiveOrders());
+        allOrders.addAll(this.speculativeOrderManager.getActiveOrders());
+
+        this.displayBoardManager.updateDisplayIfDue(level, this.blockScanner.getDisplayBoardPos(), now, allOrders);
     }
 
     private void processStagingRequestsIfDue(Level level) {
@@ -522,11 +559,14 @@ public class BuildingStockKeeper extends AbstractBuilding {
         return result;
     }
 
+    @SuppressWarnings("deprecation")
     private void updateStockSnapshotIfDue(Level level) {
         this.ensureSkillManagerInitialized();
         int interval = this.skillManager != null
                 ? this.skillManager.getStockSnapshotIntervalTicks()
                 : getDefaultStockSnapshotIntervalTicks();
+        SuppliersModule suppliersModule = this.getFirstModuleOccurance(SuppliersModule.class);
+        boolean hasSpeculativeSuppliers = suppliersModule != null && suppliersModule.hasAnySpeculativeSupplier();
         this.networkIntegration.updateStockSnapshotIfDue(level, this.blockScanner.getStockTickerPos(), interval,
                 (increases) -> {
                     // Notify RestockManager of stock increases to clear matching orders
@@ -534,7 +574,7 @@ public class BuildingStockKeeper extends AbstractBuilding {
                         this.restockManager.onStockArrival(entry.getKey(), entry.getValue());
                     }
                     this.reassignPendingRequestsOnStockChange(level);
-                });
+                }, hasSpeculativeSuppliers);
     }
 
     /**

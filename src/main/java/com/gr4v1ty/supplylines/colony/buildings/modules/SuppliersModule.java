@@ -1,5 +1,6 @@
 package com.gr4v1ty.supplylines.colony.buildings.modules;
 
+import com.gr4v1ty.supplylines.util.ResearchEffects;
 import com.minecolonies.api.colony.buildings.modules.AbstractBuildingModule;
 import com.minecolonies.api.colony.buildings.modules.IPersistentModule;
 import net.minecraft.nbt.CompoundTag;
@@ -23,6 +24,7 @@ public class SuppliersModule extends AbstractBuildingModule implements IPersiste
     private static final String TAG_PRIORITY = "priority";
     private static final String TAG_REQUEST_ADDRESS = "requestAddress";
     private static final String TAG_LABEL = "label";
+    private static final String TAG_ALLOW_SPECULATIVE = "allowSpeculative";
 
     /**
      * List of supplier entries, ordered by priority.
@@ -37,12 +39,19 @@ public class SuppliersModule extends AbstractBuildingModule implements IPersiste
         private int priority;
         private String requestAddress;
         private String label;
+        private boolean allowSpeculativeOrders;
 
         public SupplierEntry(UUID networkId, int priority, String requestAddress, String label) {
+            this(networkId, priority, requestAddress, label, false);
+        }
+
+        public SupplierEntry(UUID networkId, int priority, String requestAddress, String label,
+                boolean allowSpeculativeOrders) {
             this.networkId = networkId;
             this.priority = priority;
             this.requestAddress = requestAddress != null ? requestAddress : "";
             this.label = label != null ? label : "";
+            this.allowSpeculativeOrders = allowSpeculativeOrders;
         }
 
         public UUID getNetworkId() {
@@ -82,12 +91,32 @@ public class SuppliersModule extends AbstractBuildingModule implements IPersiste
             return requestAddress != null && !requestAddress.trim().isEmpty();
         }
 
+        /**
+         * Check if speculative ordering is allowed from this supplier.
+         *
+         * @return true if speculative orders are allowed.
+         */
+        public boolean allowsSpeculativeOrders() {
+            return allowSpeculativeOrders;
+        }
+
+        /**
+         * Set whether speculative ordering is allowed from this supplier.
+         *
+         * @param allowSpeculativeOrders
+         *            true to allow speculative orders.
+         */
+        public void setAllowSpeculativeOrders(boolean allowSpeculativeOrders) {
+            this.allowSpeculativeOrders = allowSpeculativeOrders;
+        }
+
         public CompoundTag toNBT() {
             CompoundTag tag = new CompoundTag();
             tag.putUUID(TAG_NETWORK_ID, networkId);
             tag.putInt(TAG_PRIORITY, priority);
             tag.putString(TAG_REQUEST_ADDRESS, requestAddress);
             tag.putString(TAG_LABEL, label);
+            tag.putBoolean(TAG_ALLOW_SPECULATIVE, allowSpeculativeOrders);
             return tag;
         }
 
@@ -95,8 +124,11 @@ public class SuppliersModule extends AbstractBuildingModule implements IPersiste
             UUID id = tag.getUUID(TAG_NETWORK_ID);
             int priority = tag.getInt(TAG_PRIORITY);
             String address = tag.contains(TAG_REQUEST_ADDRESS) ? tag.getString(TAG_REQUEST_ADDRESS) : "";
-            String name = tag.contains(TAG_LABEL) ? tag.getString(TAG_LABEL) : "";
-            return new SupplierEntry(id, priority, address, name);
+            String label = tag.contains(TAG_LABEL) ? tag.getString(TAG_LABEL) : "";
+            boolean allowSpeculative = tag.contains(TAG_ALLOW_SPECULATIVE)
+                    ? tag.getBoolean(TAG_ALLOW_SPECULATIVE)
+                    : false;
+            return new SupplierEntry(id, priority, address, label, allowSpeculative);
         }
 
         public void toBuf(FriendlyByteBuf buf) {
@@ -104,14 +136,16 @@ public class SuppliersModule extends AbstractBuildingModule implements IPersiste
             buf.writeInt(priority);
             buf.writeUtf(requestAddress);
             buf.writeUtf(label);
+            buf.writeBoolean(allowSpeculativeOrders);
         }
 
         public static SupplierEntry fromBuf(FriendlyByteBuf buf) {
             UUID id = buf.readUUID();
             int priority = buf.readInt();
             String address = buf.readUtf();
-            String name = buf.readUtf();
-            return new SupplierEntry(id, priority, address, name);
+            String label = buf.readUtf();
+            boolean allowSpeculative = buf.readBoolean();
+            return new SupplierEntry(id, priority, address, label, allowSpeculative);
         }
     }
 
@@ -173,6 +207,24 @@ public class SuppliersModule extends AbstractBuildingModule implements IPersiste
     }
 
     /**
+     * Set whether speculative ordering is allowed for a supplier.
+     *
+     * @param networkId
+     *            the supplier network UUID.
+     * @param allowSpeculative
+     *            true to allow speculative orders from this supplier.
+     */
+    public void setSupplierSpeculativeOrdering(UUID networkId, boolean allowSpeculative) {
+        for (SupplierEntry entry : suppliers) {
+            if (entry.getNetworkId().equals(networkId)) {
+                entry.setAllowSpeculativeOrders(allowSpeculative);
+                markDirty();
+                return;
+            }
+        }
+    }
+
+    /**
      * Remove a supplier network.
      *
      * @param networkId
@@ -216,6 +268,20 @@ public class SuppliersModule extends AbstractBuildingModule implements IPersiste
         return Collections.unmodifiableList(suppliers);
     }
 
+    /**
+     * Check if any supplier has speculative ordering enabled.
+     *
+     * @return true if at least one supplier allows speculative orders.
+     */
+    public boolean hasAnySpeculativeSupplier() {
+        for (SupplierEntry entry : suppliers) {
+            if (entry.allowsSpeculativeOrders()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void sortByPriority() {
         suppliers.sort((a, b) -> Integer.compare(a.getPriority(), b.getPriority()));
     }
@@ -253,5 +319,9 @@ public class SuppliersModule extends AbstractBuildingModule implements IPersiste
         for (SupplierEntry entry : suppliers) {
             entry.toBuf(buf);
         }
+        // Send whether speculative ordering research is unlocked
+        boolean speculativeUnlocked = building.getColony().getResearchManager().getResearchEffects()
+                .getEffectStrength(ResearchEffects.SPECULATIVE_ORDERING) > 0;
+        buf.writeBoolean(speculativeUnlocked);
     }
 }

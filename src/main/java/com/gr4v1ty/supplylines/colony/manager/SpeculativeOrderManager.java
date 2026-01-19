@@ -29,13 +29,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 /**
  * Manages speculative ordering from remote Create network suppliers when colony
@@ -84,10 +84,13 @@ public final class SpeculativeOrderManager {
      */
     private final Map<IToken<?>, UnfulfilledRequest> trackedRequests = new LinkedHashMap<>();
 
-    /**
-     * Tracks speculative orders we've placed to avoid duplicates.
-     */
-    private final Map<IToken<?>, SpeculativeOrder> activeSpeculativeOrders = new LinkedHashMap<>();
+    /** Listener for order placement events (wired by BuildingStockKeeper) */
+    @Nullable
+    private Consumer<IncomingOrder> orderPlacedListener;
+
+    /** Listener for request completion events (wired by BuildingStockKeeper) */
+    @Nullable
+    private Consumer<IToken<?>> requestCompletedListener;
 
     /**
      * Represents an unfulfilled colony request being tracked for speculative
@@ -166,6 +169,26 @@ public final class SpeculativeOrderManager {
     }
 
     /**
+     * Sets the listener for order placement events.
+     *
+     * @param listener
+     *            Consumer to be notified when orders are placed
+     */
+    public void setOrderPlacedListener(@Nullable Consumer<IncomingOrder> listener) {
+        this.orderPlacedListener = listener;
+    }
+
+    /**
+     * Sets the listener for request completion events.
+     *
+     * @param listener
+     *            Consumer to be notified when requests complete
+     */
+    public void setRequestCompletedListener(@Nullable Consumer<IToken<?>> listener) {
+        this.requestCompletedListener = listener;
+    }
+
+    /**
      * Main entry point - called from BuildingStockKeeper.serverTick().
      *
      * @param level
@@ -211,7 +234,6 @@ public final class SpeculativeOrderManager {
         if (speculativeCount == 0) {
             // No need to track requests if no suppliers allow speculative ordering
             trackedRequests.clear();
-            activeSpeculativeOrders.clear();
             return;
         }
 
@@ -386,7 +408,11 @@ public final class SpeculativeOrderManager {
 
                 SpeculativeOrder specOrder = new SpeculativeOrder(req.item, result.availableQuantity, now,
                         supplier.getNetworkId(), req.requestId);
-                activeSpeculativeOrders.put(req.requestId, specOrder);
+
+                // Fire event (DisplayBoardManager tracks it)
+                if (orderPlacedListener != null) {
+                    orderPlacedListener.accept(specOrder);
+                }
 
                 String supplierLabel = supplier.getLabel().isEmpty()
                         ? supplier.getNetworkId().toString().substring(0, 8)
@@ -404,7 +430,8 @@ public final class SpeculativeOrderManager {
     }
 
     /**
-     * Removes tracked requests that are no longer in ASSIGNING state.
+     * Removes tracked requests that are no longer in ASSIGNING state. Notifies
+     * DisplayBoardManager via requestCompletedListener for cleanup.
      */
     private void cleanupCompletedRequests() {
         Iterator<Map.Entry<IToken<?>, UnfulfilledRequest>> it = trackedRequests.entrySet().iterator();
@@ -412,23 +439,34 @@ public final class SpeculativeOrderManager {
         while (it.hasNext()) {
             Map.Entry<IToken<?>, UnfulfilledRequest> entry = it.next();
             IToken<?> requestId = entry.getKey();
+            UnfulfilledRequest req = entry.getValue();
 
             try {
                 IRequest<?> request = colony.getRequestManager().getRequestForToken(requestId);
                 if (request == null) {
                     it.remove();
-                    activeSpeculativeOrders.remove(requestId);
+                    notifyRequestCompleted(req, requestId);
                 } else {
                     RequestState state = request.getState();
                     if (state != RequestState.ASSIGNING && state != RequestState.IN_PROGRESS) {
                         it.remove();
-                        activeSpeculativeOrders.remove(requestId);
+                        notifyRequestCompleted(req, requestId);
                     }
                 }
             } catch (Exception e) {
                 it.remove();
-                activeSpeculativeOrders.remove(requestId);
+                notifyRequestCompleted(req, requestId);
             }
+        }
+    }
+
+    /**
+     * Notifies the request completed listener if an order was placed for this
+     * request.
+     */
+    private void notifyRequestCompleted(UnfulfilledRequest req, IToken<?> requestId) {
+        if (req.speculativeOrderPlaced && requestCompletedListener != null) {
+            requestCompletedListener.accept(requestId);
         }
     }
 
@@ -480,25 +518,9 @@ public final class SpeculativeOrderManager {
     }
 
     /**
-     * Gets the count of currently active speculative orders.
-     */
-    public int getActiveOrderCount() {
-        return activeSpeculativeOrders.size();
-    }
-
-    /**
      * Gets the count of currently tracked unfulfilled requests.
      */
     public int getTrackedRequestCount() {
         return trackedRequests.size();
-    }
-
-    /**
-     * Gets all active speculative orders for display purposes.
-     *
-     * @return Collection of active orders implementing IncomingOrder.
-     */
-    public Collection<IncomingOrder> getActiveOrders() {
-        return new ArrayList<>(activeSpeculativeOrders.values());
     }
 }

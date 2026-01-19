@@ -122,8 +122,8 @@ public final class ServerConfig {
                 .defineInRange("displayUpdateIntervalTicks", 100, 20, 600);
 
         defaultDeliveryTicks = builder
-                .comment("Default assumed delivery time for ETA calculations (ticks).", "Default 400 = 20 seconds.")
-                .defineInRange("defaultDeliveryTicks", 400, 100, 2400);
+                .comment("Default assumed delivery time for ETA calculations (ticks).", "Default 1200 = 1 minute.")
+                .defineInRange("defaultDeliveryTicks", 1200, 100, 2400);
 
         orderExpiryBufferTicks = builder
                 .comment("Fallback timeout after ETA before expiring undetected orders (ticks).",

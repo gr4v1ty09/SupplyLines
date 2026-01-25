@@ -1,0 +1,50 @@
+<window xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/ldtteam/BlockUI/version/1.20.1/src/main/resources/assets/blockui/gui/block_ui.xsd"
+    size="190 244">
+    <image source="minecolonies:textures/gui/builderhut/builder_paper.png" size="190 244"/>
+
+    <!-- Title -->
+    <text id="desc" size="130 11" pos="30 14" textalign="MIDDLE" color="black"
+          label="$(com.supplylines.gui.stockkeeper.suppliers)"/>
+
+    <!-- Link Network Button -->
+    <button id="linknetwork" pos="52 30" size="86 17"
+            label="$(com.supplylines.gui.stockkeeper.linknetwork)"
+            source="minecolonies:textures/gui/builderhut/builder_button_medium.png" color="black"/>
+
+    <!-- Supplier List -->
+    <list id="suppliers" size="164 168" pos="16 54"
+          emptytext="$(com.supplylines.gui.stockkeeper.suppliers.empty)" emptycolor="black">
+        <box size="100% 88" linewidth="1" linecolor="#a0a0a0">
+            <!-- Row 1: Priority, Label input, buttons -->
+            <text id="priority" size="18 14" pos="4 6" color="black"/>
+            <input id="label" size="82 16" pos="22 4" maxlength="24"/>
+
+            <!-- Up/Down buttons -->
+            <button label="^" id="up" pos="108 3" size="16 11"
+                    source="minecolonies:textures/gui/builderhut/builder_button_very_small.png" color="black"/>
+            <button label="v" id="down" pos="108 15" size="16 11"
+                    source="minecolonies:textures/gui/builderhut/builder_button_very_small.png" color="black"/>
+
+            <!-- Remove button -->
+            <button label="X" id="remove" pos="128 6" size="18 17"
+                    source="minecolonies:textures/gui/builderhut/builder_button_very_small.png" color="red"/>
+
+            <!-- Row 2: Network ID and Status -->
+            <text id="networkid" size="70 12" pos="4 28" color="gray"/>
+            <text id="status" size="60 12" pos="78 28" color="gray"/>
+
+            <!-- Row 3: Address input -->
+            <text size="30 14" pos="4 48" color="gray" label="Addr:"/>
+            <input id="address" size="110 16" pos="36 46" maxlength="32"/>
+
+            <!-- Row 4: Speculative ordering toggle -->
+            <text size="80 12" pos="4 68" color="gray"
+                  label="$(com.supplylines.gui.stockkeeper.suppliers.speculative)"/>
+            <checkbox id="speculative" pos="88 66" size="14 14"
+                      source="blockui:textures/gui/button_mini.png"
+                      disabled="blockui:textures/gui/button_mini_disabled.png"
+                      checkmark="blockui:textures/gui/overlay_mini_check.png"/>
+        </box>
+    </list>
+</window>

@@ -1,0 +1,37 @@
+<window xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/ldtteam/BlockUI/version/1.20.1/src/main/resources/assets/blockui/gui/block_ui.xsd"
+    size="190 244">
+    <image source="minecolonies:textures/gui/builderhut/builder_paper.png" size="190 244"/>
+
+    <!-- Title -->
+    <text id="desc" size="130 11" pos="30 14" textalign="MIDDLE" color="black"
+          label="$(com.supplylines.gui.stockkeeper.restockpolicy)"/>
+
+    <!-- Add Button -->
+    <button id="add" size="86 17" pos="50 30" color="black"
+            source="minecolonies:textures/gui/builderhut/builder_button_medium.png"
+            label="$(com.supplylines.gui.stockkeeper.restockpolicy.add)"/>
+
+    <!-- Column Headers (positions account for list offset of 13) -->
+    <text size="32 10" pos="45 50" color="black" textalign="MIDDLE" label="$(com.supplylines.gui.stockkeeper.restockpolicy.header.stock)"/>
+    <text size="44 10" pos="95 50" color="black" textalign="MIDDLE" label="$(com.supplylines.gui.stockkeeper.restockpolicy.header.remote)"/>
+
+    <!-- Policy List -->
+    <list id="policies" size="170 168" pos="13 62"
+          emptytext="$(com.supplylines.gui.stockkeeper.restockpolicy.empty)" emptycolor="black">
+        <box size="100% 20" linewidth="1">
+            <!-- Item icon (shows target quantity as stack count) -->
+            <itemicon id="itemicon" size="17 17" pos="2 1"/>
+
+            <!-- Stock level (hut vault) with color coding -->
+            <text id="stock" size="36 12" pos="32 4" color="black" textalign="MIDDLE"/>
+
+            <!-- Remote stock (sum across suppliers) -->
+            <text id="remote" size="44 12" pos="82 4" color="black" textalign="MIDDLE"/>
+
+            <!-- Remove button -->
+            <button label="X" id="remove" pos="140 2" size="20 15"
+                    source="minecolonies:textures/gui/builderhut/builder_button_very_small.png" color="red"/>
+        </box>
+    </list>
+</window>

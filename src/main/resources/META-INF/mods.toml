@@ -65,19 +65,19 @@ description='''Integrates MineColonies with Create mod, enabling colonists to re
     ordering="NONE"
     side="BOTH"
 
-# --- Create (use the range recommended by Create wiki for 1.20.1) ---
+# --- Create (6.0.7+ required due to GlobalPackagePort class relocation) ---
 [[dependencies.supplylines]]
 modId="create"
 mandatory=true
-versionRange="[6.0.6,)"
+versionRange="[6.0.7,)"
 ordering="NONE"
 side="BOTH"
 
-# --- MineColonies (broad range; we're not linking to code yet) ---
+# --- MineColonies (requires 1.1.1161+ due to AbstractModuleWindow and isPendingConstruction() API changes) ---
 [[dependencies.supplylines]]
 modId="minecolonies"
 mandatory=true
-versionRange="[1.1.1069,)"
+versionRange="[1.1.1161,)"
 ordering="NONE"
 side="BOTH"
 

@@ -1,5 +1,6 @@
 package com.gr4v1ty.supplylines.util;
 
+import com.minecolonies.api.colony.requestsystem.requestable.Burnable;
 import com.minecolonies.api.colony.requestsystem.requestable.Food;
 import com.minecolonies.api.colony.requestsystem.requestable.IRequestable;
 import com.minecolonies.api.colony.requestsystem.requestable.RequestTag;
@@ -17,8 +18,8 @@ public final class RequestTypes {
 
     /**
      * Checks if the given requestable is a type that SupplyLines resolvers can
-     * handle. Currently supports: Stack, Tool, RequestTag, StackList, and Food
-     * requests.
+     * handle. Currently supports: Stack, Tool, RequestTag, StackList, Food, and
+     * Burnable requests.
      *
      * @param requestable
      *            The requestable to check
@@ -26,6 +27,6 @@ public final class RequestTypes {
      */
     public static boolean isSupplyLinesType(IRequestable requestable) {
         return requestable instanceof Stack || requestable instanceof Tool || requestable instanceof RequestTag
-                || requestable instanceof StackList || requestable instanceof Food;
+                || requestable instanceof StackList || requestable instanceof Food || requestable instanceof Burnable;
     }
 }

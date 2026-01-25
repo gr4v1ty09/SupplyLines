@@ -60,6 +60,6 @@ public final class ToolResolverFactory implements IFactory<FactoryVoidInput, Too
     }
 
     public short getSerializationId() {
-        return 31026;
+        return SERIALIZATION_ID;
     }
 }

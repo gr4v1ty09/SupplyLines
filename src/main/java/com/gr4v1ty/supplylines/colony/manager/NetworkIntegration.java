@@ -1,14 +1,17 @@
 package com.gr4v1ty.supplylines.colony.manager;
 
 import com.gr4v1ty.supplylines.colony.model.StagingRequest;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.gr4v1ty.supplylines.rs.util.DeliveryPlanning;
 import com.gr4v1ty.supplylines.util.ItemMatch;
 import com.gr4v1ty.supplylines.util.inventory.RackPicker;
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.requestsystem.requestable.Burnable;
 import com.minecolonies.api.colony.requestsystem.requestable.Food;
 import com.minecolonies.api.colony.requestsystem.requestable.Stack;
 import com.minecolonies.api.colony.requestsystem.requestable.StackList;
 import com.minecolonies.api.colony.requestsystem.requestable.Tool;
+import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.simibubi.create.content.logistics.BigItemStack;
 import com.simibubi.create.content.logistics.packager.InventorySummary;
@@ -22,6 +25,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.TagKey;
@@ -37,8 +41,30 @@ import org.slf4j.LoggerFactory;
 public final class NetworkIntegration {
     private static final Logger LOGGER = LoggerFactory.getLogger(NetworkIntegration.class);
     private static final String DELIVERY_FROGPORT_NAME = "SK_Deliveries";
-    private static final long STAGING_TIMEOUT_TICKS = 1200L;
-    private static final long BUFFER_WINDOW_TICKS = 60L;
+
+    /** Provider for staging timeout ticks (per-building setting) */
+    @Nullable
+    private IntSupplier stagingTimeoutProvider;
+
+    private long getStagingTimeoutTicks() {
+        return stagingTimeoutProvider != null
+                ? stagingTimeoutProvider.getAsInt()
+                : ModConfig.SERVER.stagingTimeoutTicks.get();
+    }
+
+    /**
+     * Sets the provider for staging timeout ticks.
+     *
+     * @param provider
+     *            Supplier for the timeout value, or null for global config
+     */
+    public void setStagingTimeoutProvider(@Nullable IntSupplier provider) {
+        this.stagingTimeoutProvider = provider;
+    }
+
+    private static long getBufferWindowTicks() {
+        return ModConfig.SERVER.bufferWindowTicks.get();
+    }
     private final Map<IToken<?>, StagingRequest> pendingStagingRequests = new HashMap<>();
     private final Map<ItemMatch.ItemStackKey, Long> stockLevels = new HashMap<ItemMatch.ItemStackKey, Long>();
     private final Map<ItemMatch.ItemStackKey, Long> previousStockLevels = new HashMap<ItemMatch.ItemStackKey, Long>();
@@ -54,7 +80,7 @@ public final class NetworkIntegration {
     }
 
     public void updateStockSnapshotIfDue(Level level, @Nullable BlockPos stockTickerPos, int stockSnapshotIntervalTicks,
-            @Nullable Runnable stockChangeCallback) {
+            @Nullable StockChangeListener stockChangeListener, boolean hasSpeculativeSuppliers) {
         long now = level.getGameTime();
         if (now <= 0L) {
             return;
@@ -83,7 +109,7 @@ public final class NetworkIntegration {
                         behaviour != null ? behaviour.freqId : "N/A");
                 return;
             }
-            InventorySummary summary = LogisticsManager.getSummaryOfNetwork((UUID) behaviour.freqId, (boolean) false);
+            InventorySummary summary = LogisticsManager.getSummaryOfNetwork(behaviour.freqId, false);
             boolean stockChanged = false;
             HashMap<ItemMatch.ItemStackKey, Long> newStockLevels = new HashMap<ItemMatch.ItemStackKey, Long>();
             if (summary != null && !summary.isEmpty()) {
@@ -95,14 +121,17 @@ public final class NetworkIntegration {
                     long existingQty = newStockLevels.getOrDefault(key, 0L);
                     newStockLevels.put(key, existingQty + (long) bigStack.count);
                 }
-            } else {
+            } else if (!hasSpeculativeSuppliers) {
                 LOGGER.warn(
-                        "{} Network summary is empty or null - no items in network or frequency not configured properly",
+                        "{} Network summary is empty and no speculative suppliers configured - Stock Keeper has no item sources",
                         LogTags.INVENTORY);
             }
             if (!this.previousStockLevels.isEmpty()) {
                 for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : this.previousStockLevels.entrySet()) {
+
+                    @SuppressWarnings("unused")
                     long newQty;
+
                     long oldQty = entry.getValue();
                     if (oldQty == (newQty = newStockLevels.getOrDefault(entry.getKey(), 0L).longValue()))
                         continue;
@@ -120,12 +149,24 @@ public final class NetworkIntegration {
             } else {
                 stockChanged = !newStockLevels.isEmpty();
             }
+
+            // Compute stock increases (deltas) for arrival detection
+            Map<ItemMatch.ItemStackKey, Long> stockIncreases = new HashMap<>();
+            for (Map.Entry<ItemMatch.ItemStackKey, Long> entry : newStockLevels.entrySet()) {
+                long oldQty = this.stockLevels.getOrDefault(entry.getKey(), 0L);
+                long newQty = entry.getValue();
+                if (newQty > oldQty) {
+                    stockIncreases.put(entry.getKey(), newQty - oldQty);
+                }
+            }
+
             this.previousStockLevels.clear();
             this.previousStockLevels.putAll(this.stockLevels);
             this.stockLevels.clear();
             this.stockLevels.putAll(newStockLevels);
-            if (stockChanged && stockChangeCallback != null) {
-                stockChangeCallback.run();
+
+            if (stockChangeListener != null && !stockIncreases.isEmpty()) {
+                stockChangeListener.onStockChanged(stockIncreases);
             }
         } catch (Exception e) {
             LOGGER.error("{} Failed to update stock snapshot from Stock Ticker", LogTags.INVENTORY, e);
@@ -177,8 +218,21 @@ public final class NetworkIntegration {
             if (staging.bundleLeaderId != null) {
                 StagingRequest leader = this.pendingStagingRequests.get(staging.bundleLeaderId);
                 if (leader == null) {
-                    LOGGER.debug("{} Bundled follower's leader completed - removing follower", LogTags.DISPATCH);
-                    it.remove();
+                    // Leader completed - check if follower items arrived in staging
+                    boolean available = this.isAvailableInStaging(level, stagingRackPositions, staging.item,
+                            staging.quantity);
+                    if (available) {
+                        LOGGER.debug(
+                                "{} Bundled follower (item={}) leader completed - items available, marking completed",
+                                LogTags.DISPATCH, staging.item.getHoverName().getString());
+                        staging.state = StagingRequest.State.COMPLETED;
+                        it.remove();
+                        reassignmentCallback.run();
+                    } else {
+                        LOGGER.debug("{} Bundled follower (item={}) leader completed - items not available, removing",
+                                LogTags.DISPATCH, staging.item.getHoverName().getString());
+                        it.remove();
+                    }
                     continue;
                 }
                 if (leader.state == StagingRequest.State.BROADCASTED) {
@@ -210,7 +264,7 @@ public final class NetworkIntegration {
                 continue;
             }
             long elapsed = level.getGameTime() - staging.requestedAtTick;
-            if (elapsed <= STAGING_TIMEOUT_TICKS)
+            if (elapsed <= getStagingTimeoutTicks())
                 continue;
             staging.state = StagingRequest.State.CANCELLED;
             it.remove();
@@ -225,7 +279,7 @@ public final class NetworkIntegration {
         if (now <= 0L) {
             return;
         }
-        if (this.lastBufferFlushTick != Long.MIN_VALUE && now - this.lastBufferFlushTick < BUFFER_WINDOW_TICKS) {
+        if (this.lastBufferFlushTick != Long.MIN_VALUE && now - this.lastBufferFlushTick < getBufferWindowTicks()) {
             return;
         }
         this.lastBufferFlushTick = now;
@@ -234,11 +288,11 @@ public final class NetworkIntegration {
         }
         LOGGER.info("{} Flushing {} buffered requests to pending", LogTags.DISPATCH, this.bufferedRequests.size());
         ArrayList<StagingRequest> allRequests = new ArrayList<StagingRequest>(this.bufferedRequests.values());
-        StagingRequest leader = (StagingRequest) allRequests.get(0);
+        StagingRequest leader = allRequests.get(0);
         leader.bundleLeaderId = null;
         this.pendingStagingRequests.put(leader.parentRequestId, leader);
         for (int i = 1; i < allRequests.size(); ++i) {
-            StagingRequest follower = (StagingRequest) allRequests.get(i);
+            StagingRequest follower = allRequests.get(i);
             follower.bundleLeaderId = leader.parentRequestId;
             this.pendingStagingRequests.put(follower.parentRequestId, follower);
         }
@@ -263,9 +317,8 @@ public final class NetworkIntegration {
             String address = DELIVERY_FROGPORT_NAME;
             LOGGER.debug("{} Broadcasting package with {} item type(s) to Create network", LogTags.DISPATCH,
                     orderedStacks.size());
-            boolean success = LogisticsManager.broadcastPackageRequest((UUID) freqId,
-                    (LogisticallyLinkedBehaviour.RequestType) LogisticallyLinkedBehaviour.RequestType.RESTOCK,
-                    (PackageOrderWithCrafts) order, null, (String) address);
+            boolean success = LogisticsManager.broadcastPackageRequest(freqId,
+                    LogisticallyLinkedBehaviour.RequestType.RESTOCK, order, null, address);
             if (success) {
                 LOGGER.debug("{} Successfully broadcast package with {} item type(s) to Create network",
                         LogTags.DISPATCH, orderedStacks.size());
@@ -356,6 +409,15 @@ public final class NetworkIntegration {
 
     public boolean requestFromStockNetworkForFood(Food food, IToken<?> requestId, Level level) {
         return requestFromStockNetworkGeneric(food::matches, food.getCount(), requestId, level, "Food");
+    }
+
+    public long getStockLevelForBurnable(Burnable burnable) {
+        return getStockLevelMatching(FurnaceBlockEntity::isFuel);
+    }
+
+    public boolean requestFromStockNetworkForBurnable(Burnable burnable, IToken<?> requestId, Level level) {
+        return requestFromStockNetworkGeneric(FurnaceBlockEntity::isFuel, burnable.getCount(), requestId, level,
+                "Burnable");
     }
 
     public long getStockLevel(ItemStack item) {

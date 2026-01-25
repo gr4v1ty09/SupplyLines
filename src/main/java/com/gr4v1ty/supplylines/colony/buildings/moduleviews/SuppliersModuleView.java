@@ -1,0 +1,107 @@
+package com.gr4v1ty.supplylines.colony.buildings.moduleviews;
+
+import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
+import com.gr4v1ty.supplylines.colony.buildings.modules.SuppliersModule;
+import com.ldtteam.blockui.views.BOWindow;
+import com.minecolonies.api.colony.buildings.modules.AbstractBuildingModuleView;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Client-side view for the suppliers module. Displays and manages remote Create
+ * stock network suppliers.
+ */
+public class SuppliersModuleView extends AbstractBuildingModuleView {
+
+    /** Local copy of supplier entries from server. */
+    private final List<SuppliersModule.SupplierEntry> suppliers = new ArrayList<>();
+
+    /** Network status for each supplier, keyed by network ID. */
+    private final Map<UUID, SuppliersModule.NetworkStatus> networkStatuses = new HashMap<>();
+
+    /** Whether speculative ordering research is unlocked. */
+    private boolean speculativeUnlocked = false;
+
+    @Override
+    public void deserialize(@NotNull FriendlyByteBuf buf) {
+        suppliers.clear();
+        networkStatuses.clear();
+        int size = buf.readInt();
+        for (int i = 0; i < size; i++) {
+            SuppliersModule.SupplierEntry entry = SuppliersModule.SupplierEntry.fromBuf(buf);
+            SuppliersModule.NetworkStatus status = buf.readEnum(SuppliersModule.NetworkStatus.class);
+            suppliers.add(entry);
+            networkStatuses.put(entry.getNetworkId(), status);
+        }
+        speculativeUnlocked = buf.readBoolean();
+    }
+
+    /**
+     * Get the network status for a supplier.
+     *
+     * @param networkId
+     *            the network UUID.
+     * @return the network status, or OFFLINE if not found.
+     */
+    public SuppliersModule.NetworkStatus getNetworkStatus(UUID networkId) {
+        return networkStatuses.getOrDefault(networkId, SuppliersModule.NetworkStatus.OFFLINE);
+    }
+
+    @Override
+    public boolean isPageVisible() {
+        return getBuildingView().getBuildingLevel() >= BuildingStockKeeper.getRestockPolicyRequiredLevel();
+    }
+
+    @Override
+    @OnlyIn(Dist.CLIENT)
+    public BOWindow getWindow() {
+        // Lazy import to avoid client class loading on server
+        return createWindow();
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private BOWindow createWindow() {
+        return new com.gr4v1ty.supplylines.colony.buildings.modulewindows.SuppliersModuleWindow(this);
+    }
+
+    @Override
+    @SuppressWarnings("removal")
+    public ResourceLocation getIconResourceLocation() {
+        return new ResourceLocation("minecolonies", "textures/gui/modules/connection.png");
+    }
+
+    @Override
+    @Nullable
+    public Component getDesc() {
+        return Component.translatable("com.supplylines.gui.stockkeeper.suppliers");
+    }
+
+    /**
+     * Get the list of suppliers. Note: Returns mutable list for local GUI updates.
+     *
+     * @return list of supplier entries.
+     */
+    public List<SuppliersModule.SupplierEntry> getSuppliers() {
+        return suppliers;
+    }
+
+    /**
+     * Check if speculative ordering research is unlocked.
+     *
+     * @return true if the research has been completed.
+     */
+    public boolean isSpeculativeUnlocked() {
+        return speculativeUnlocked;
+    }
+}

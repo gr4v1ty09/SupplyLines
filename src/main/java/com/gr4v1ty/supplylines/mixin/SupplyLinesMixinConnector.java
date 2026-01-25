@@ -11,7 +11,7 @@ public class SupplyLinesMixinConnector implements IMixinConnector {
     public void connect() {
         LOGGER.debug("Registering mixin config: supplylines.mixins.json");
         try {
-            Mixins.addConfiguration((String) "supplylines.mixins.json");
+            Mixins.addConfiguration("supplylines.mixins.json");
         } catch (Exception e) {
             LOGGER.error("Failed to register mixin config: {}", e.getMessage(), e);
             throw e;

@@ -25,10 +25,9 @@ Thumbs.db
 run/
 run-server/
 libs/
+.frozen-worlds/
 
 # Built JARs (keep libs/ for manual dependencies)
 *.jar
 VERSIONING.md
-
-# Local scripts
 deploy-test.sh

@@ -18,6 +18,6 @@ public class BlockHutStockKeeper extends AbstractBlockHut<BlockHutStockKeeper> {
     }
 
     public BuildingEntry getBuildingEntry() {
-        return (BuildingEntry) ModBuildings.STOCK_KEEPER_HUT.get();
+        return ModBuildings.STOCK_KEEPER_HUT.get();
     }
 }

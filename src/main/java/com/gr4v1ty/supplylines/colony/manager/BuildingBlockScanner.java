@@ -1,8 +1,11 @@
 package com.gr4v1ty.supplylines.colony.manager;
 
 import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
+import com.gr4v1ty.supplylines.config.ModConfig;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.simibubi.create.AllBlocks;
+import com.simibubi.create.content.kinetics.belt.BeltBlock;
+import com.simibubi.create.content.kinetics.belt.BeltPart;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -20,20 +23,26 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public final class RackManager {
-    private static final Logger LOGGER = LoggerFactory.getLogger(RackManager.class);
+public final class BuildingBlockScanner {
+    private static final Logger LOGGER = LoggerFactory.getLogger(BuildingBlockScanner.class);
     @SuppressWarnings("removal") // ResourceLocation constructor deprecated in Forge 47.x, will migrate in 1.21
     public static final ResourceLocation RACK_ID = new ResourceLocation("minecolonies", "blockminecoloniesrack");
-    private static final int AUXILIARY_SCAN_RADIUS = 16;
+
+    /** Gets the auxiliary scan radius from config */
+    private static int getAuxiliaryScanRadius() {
+        return ModConfig.SERVER.auxiliaryScanRadius.get();
+    }
     @Nullable
-    private final Block rackBlock = (Block) ForgeRegistries.BLOCKS.getValue(RACK_ID);
+    private final Block rackBlock = ForgeRegistries.BLOCKS.getValue(RACK_ID);
     private final List<BlockPos> rackPositions = new ArrayList<BlockPos>();
+    private final List<BlockPos> beltPositions = new ArrayList<BlockPos>();
     private BlockPos stockTickerPos;
     private BlockPos seatPos;
+    private BlockPos displayBoardPos;
     private long lastScanGameTime = Long.MIN_VALUE;
     private final IBuilding building;
 
-    public RackManager(IBuilding building) {
+    public BuildingBlockScanner(IBuilding building) {
         this.building = building;
     }
 
@@ -45,10 +54,14 @@ public final class RackManager {
         this.rackPositions.clear();
         this.rackPositions.addAll(this.scanRacks(level));
         this.lastScanGameTime = Math.max(1L, level.getGameTime());
-        if (buildingLevel >= BuildingStockKeeper.STOCK_TICKER_REQUIRED_LEVEL) {
-            this.stockTickerPos = this.findNearestBlock(level, this.building.getPosition(), AUXILIARY_SCAN_RADIUS,
+        if (buildingLevel >= BuildingStockKeeper.getStockTickerRequiredLevel()) {
+            this.stockTickerPos = this.findNearestBlock(level, this.building.getPosition(), getAuxiliaryScanRadius(),
                     (Block) AllBlocks.STOCK_TICKER.get());
             this.seatPos = this.findNearestSeat(level);
+            this.displayBoardPos = this.findNearestBlock(level, this.building.getPosition(), getAuxiliaryScanRadius(),
+                    (Block) AllBlocks.DISPLAY_BOARD.get());
+            this.beltPositions.clear();
+            this.beltPositions.addAll(this.scanBelts(level));
         }
         boolean changed = !prevRacks.equals(new HashSet<BlockPos>(this.rackPositions));
         return changed;
@@ -75,6 +88,15 @@ public final class RackManager {
     @Nullable
     public BlockPos getSeatPos() {
         return this.seatPos;
+    }
+
+    @Nullable
+    public BlockPos getDisplayBoardPos() {
+        return this.displayBoardPos;
+    }
+
+    public List<BlockPos> getBeltPositions() {
+        return Collections.unmodifiableList(this.beltPositions);
     }
 
     /**
@@ -132,7 +154,7 @@ public final class RackManager {
         for (DyeColor color : DyeColor.values()) {
             try {
                 Block seatBlock = (Block) AllBlocks.SEATS.get(color).get();
-                BlockPos found = this.findNearestBlock(level, this.building.getPosition(), AUXILIARY_SCAN_RADIUS,
+                BlockPos found = this.findNearestBlock(level, this.building.getPosition(), getAuxiliaryScanRadius(),
                         seatBlock);
                 if (found == null)
                     continue;
@@ -143,5 +165,54 @@ public final class RackManager {
             }
         }
         return null;
+    }
+
+    /**
+     * Scans for Create belt blocks within building bounds. Returns a subset of belt
+     * positions to use as patrol points (not every belt block, just representative
+     * ones).
+     */
+    private List<BlockPos> scanBelts(Level level) {
+        if (level == null || this.building == null) {
+            return List.of();
+        }
+        Block beltBlock;
+        try {
+            beltBlock = (Block) AllBlocks.BELT.get();
+        } catch (Exception e) {
+            LOGGER.debug("{} Belt block not available: {}", LogTags.INVENTORY, e.getMessage());
+            return List.of();
+        }
+        if (beltBlock == null) {
+            return List.of();
+        }
+
+        ArrayList<BlockPos> belts = new ArrayList<>();
+        BlockPos center = this.building.getPosition();
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        int r = getAuxiliaryScanRadius();
+
+        for (int dx = -r; dx <= r; ++dx) {
+            for (int dy = -2; dy <= 6; ++dy) {
+                for (int dz = -r; dz <= r; ++dz) {
+                    m.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
+                    BlockState state = level.getBlockState(m);
+                    if (state.is(beltBlock)) {
+                        // Only include MIDDLE segments (avoid ends with funnels)
+                        BeltPart part = state.getValue(BeltBlock.PART);
+                        if (part == BeltPart.MIDDLE || part == BeltPart.PULLEY) {
+                            belts.add(m.immutable());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Deduplicate to just a few representative positions (every 4th belt found)
+        ArrayList<BlockPos> representative = new ArrayList<>();
+        for (int i = 0; i < belts.size(); i += 4) {
+            representative.add(belts.get(i));
+        }
+        return representative;
     }
 }

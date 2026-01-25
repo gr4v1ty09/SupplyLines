@@ -60,6 +60,6 @@ public final class TagResolverFactory implements IFactory<FactoryVoidInput, TagR
     }
 
     public short getSerializationId() {
-        return 31027;
+        return SERIALIZATION_ID;
     }
 }

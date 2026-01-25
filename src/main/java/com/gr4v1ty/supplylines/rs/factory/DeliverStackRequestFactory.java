@@ -32,7 +32,7 @@ public final class DeliverStackRequestFactory implements IFactory<DeliverStack, 
         if (context.length < 2) {
             throw new IllegalArgumentException("DeliverStackRequestFactory requires context: [IToken, IRequester]");
         }
-        IToken token = (IToken) context[0];
+        IToken<?> token = (IToken<?>) context[0];
         IRequester requester = (IRequester) context[1];
         return new DeliverStackRequest(requester, token, deliverStack);
     }
@@ -43,7 +43,7 @@ public final class DeliverStackRequestFactory implements IFactory<DeliverStack, 
         compound.put("Token", (Tag) controller.serialize((Object) request.getId()));
         compound.put("Requester", (Tag) controller.serialize((Object) request.getRequester()));
         DeliverStackFactory dsFactory = new DeliverStackFactory();
-        compound.put("Requested", (Tag) dsFactory.serialize(controller, (DeliverStack) request.getRequest()));
+        compound.put("Requested", dsFactory.serialize(controller, request.getRequest()));
         compound.putInt("State", request.getState().ordinal());
         return compound;
     }
@@ -51,7 +51,7 @@ public final class DeliverStackRequestFactory implements IFactory<DeliverStack, 
     @NotNull
     public DeliverStackRequest deserialize(@NotNull IFactoryController controller, @NotNull CompoundTag nbt)
             throws Throwable {
-        IToken token = (IToken) controller.deserialize(nbt.getCompound("Token"));
+        IToken<?> token = (IToken<?>) controller.deserialize(nbt.getCompound("Token"));
         IRequester requester = (IRequester) controller.deserialize(nbt.getCompound("Requester"));
         DeliverStackFactory dsFactory = new DeliverStackFactory();
         DeliverStack requested = dsFactory.deserialize(controller, nbt.getCompound("Requested"));
@@ -64,22 +64,22 @@ public final class DeliverStackRequestFactory implements IFactory<DeliverStack, 
         controller.serialize(buffer, (Object) request.getId());
         controller.serialize(buffer, (Object) request.getRequester());
         DeliverStackFactory dsFactory = new DeliverStackFactory();
-        dsFactory.serialize(controller, (DeliverStack) request.getRequest(), buffer);
-        buffer.writeEnum((Enum) request.getState());
+        dsFactory.serialize(controller, request.getRequest(), buffer);
+        buffer.writeEnum(request.getState());
     }
 
     @NotNull
     public DeliverStackRequest deserialize(@NotNull IFactoryController controller, @NotNull FriendlyByteBuf buffer)
             throws Throwable {
-        IToken token = (IToken) controller.deserialize(buffer);
+        IToken<?> token = (IToken<?>) controller.deserialize(buffer);
         IRequester requester = (IRequester) controller.deserialize(buffer);
         DeliverStackFactory dsFactory = new DeliverStackFactory();
         DeliverStack requested = dsFactory.deserialize(controller, buffer);
-        RequestState state = (RequestState) buffer.readEnum(RequestState.class);
+        RequestState state = buffer.readEnum(RequestState.class);
         return new DeliverStackRequest(requester, token, state, requested);
     }
 
     public short getSerializationId() {
-        return 31003;
+        return SERIALIZATION_ID;
     }
 }

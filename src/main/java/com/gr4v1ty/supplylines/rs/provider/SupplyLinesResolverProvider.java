@@ -6,7 +6,6 @@ import com.minecolonies.api.colony.requestsystem.resolver.IRequestResolver;
 import com.minecolonies.api.colony.requestsystem.resolver.IRequestResolverProvider;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.colony.requestsystem.token.StandardToken;
-import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -20,7 +19,7 @@ public final class SupplyLinesResolverProvider implements IRequestResolverProvid
 
     public SupplyLinesResolverProvider(@NotNull UUID providerId, @NotNull List<IRequestResolver<?>> resolvers) {
         this.id = new StandardToken(Objects.requireNonNull(providerId, "providerId"));
-        this.resolvers = ImmutableList.copyOf((Collection) Objects.requireNonNull(resolvers, "resolvers"));
+        this.resolvers = ImmutableList.copyOf(Objects.requireNonNull(resolvers, "resolvers"));
     }
 
     @NotNull

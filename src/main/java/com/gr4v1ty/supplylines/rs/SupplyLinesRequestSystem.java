@@ -1,5 +1,6 @@
 package com.gr4v1ty.supplylines.rs;
 
+import com.gr4v1ty.supplylines.rs.factory.BurnableResolverFactory;
 import com.gr4v1ty.supplylines.rs.factory.DeliverStackFactory;
 import com.gr4v1ty.supplylines.rs.factory.DeliverStackRequestFactory;
 import com.gr4v1ty.supplylines.rs.factory.FoodResolverFactory;
@@ -56,6 +57,8 @@ public final class SupplyLinesRequestSystem {
                 "TagResolverFactory");
         SupplyLinesRequestSystem.registerFactory((IFactoryController) controller, ToolResolverFactory::new,
                 "ToolResolverFactory");
+        SupplyLinesRequestSystem.registerFactory((IFactoryController) controller, BurnableResolverFactory::new,
+                "BurnableResolverFactory");
         try {
             RequestMappingHandler.registerRequestableTypeMapping(DeliverStack.class, DeliverStackRequest.class);
             LOGGER.debug("Registered DeliverStack requestable type mapping -> DeliverStackRequest");
@@ -70,7 +73,7 @@ public final class SupplyLinesRequestSystem {
             String factoryName) {
         try {
             Object factory = factorySupplier.get();
-            controller.registerNewFactory((IFactory) factory);
+            controller.registerNewFactory((IFactory<?, ?>) factory);
             LOGGER.debug("Registered {}", factoryName);
         } catch (Exception e) {
             LOGGER.error("Failed to register {}", factoryName, e);
@@ -79,9 +82,8 @@ public final class SupplyLinesRequestSystem {
     }
 
     /**
-     * Registers a provider with MineColonies' request system. This method is
-     * idempotent - safe to call multiple times. MineColonies will throw
-     * IllegalArgumentException if already registered, which we catch and ignore.
+     * Registers a provider with MineColonies' request system. Caller
+     * (RequestHandler) is responsible for tracking registration state.
      */
     public static void registerProvider(@NotNull IRequestManager manager, @NotNull UUID providerId,
             @NotNull List<IRequestResolver<?>> resolvers) {
@@ -95,47 +97,32 @@ public final class SupplyLinesRequestSystem {
             manager.onProviderAddedToColony((IRequestResolverProvider) provider);
             LOGGER.info("[SupplyLines] Provider {} registered with {} resolvers", providerId, resolvers.size());
         } catch (IllegalArgumentException e) {
-            // Provider already registered - this is expected and safe to ignore
-        } catch (Exception e) {
-            LOGGER.error("[SupplyLines] Failed to register provider {}", providerId, e);
-            throw e;
+            // Provider already registered from deserialization - replace it with fresh
+            // resolvers
+            // that have components registered in the static registry
+            SupplyLinesResolverProvider empty = new SupplyLinesResolverProvider(providerId, List.of());
+            try {
+                manager.onProviderRemovedFromColony((IRequestResolverProvider) empty);
+            } catch (IllegalArgumentException ignored) {
+            }
+            try {
+                manager.onProviderAddedToColony((IRequestResolverProvider) provider);
+            } catch (IllegalArgumentException ignored) {
+            }
         }
     }
 
     /**
-     * Unregisters a provider from MineColonies' request system. This method handles
-     * the case where the provider may not be registered gracefully.
-     *
-     * Note: We create an empty provider with the same ID - MineColonies uses the ID
-     * for removal, not the resolver list contents.
+     * Unregisters a provider from MineColonies' request system.
      */
     public static void unregisterProvider(@NotNull IRequestManager manager, @NotNull UUID providerId) {
         Objects.requireNonNull(manager, "manager");
         Objects.requireNonNull(providerId, "providerId");
 
-        // Create provider with same ID - MineColonies matches by ID for removal
         SupplyLinesResolverProvider provider = new SupplyLinesResolverProvider(providerId, List.of());
-
         try {
             manager.onProviderRemovedFromColony((IRequestResolverProvider) provider);
-            LOGGER.info("[SupplyLines] Provider {} unregistered", providerId);
-        } catch (IllegalArgumentException e) {
-            // Provider wasn't registered - this can happen on world reload
-            LOGGER.debug("[SupplyLines] Provider {} was not registered (already removed)", providerId);
-        } catch (Exception e) {
-            LOGGER.error("[SupplyLines] Failed to unregister provider {}", providerId, e);
-            // Don't rethrow - we're cleaning up, best effort
+        } catch (IllegalArgumentException ignored) {
         }
-    }
-
-    /**
-     * Replaces resolvers for a provider. Unregisters the old provider and registers
-     * new one.
-     */
-    public static void replaceResolvers(@NotNull IRequestManager manager, @NotNull UUID providerId,
-            @NotNull List<IRequestResolver<?>> newResolvers) {
-        LOGGER.debug("[SupplyLines] Replacing resolvers for provider {}", providerId);
-        SupplyLinesRequestSystem.unregisterProvider(manager, providerId);
-        SupplyLinesRequestSystem.registerProvider(manager, providerId, newResolvers);
     }
 }

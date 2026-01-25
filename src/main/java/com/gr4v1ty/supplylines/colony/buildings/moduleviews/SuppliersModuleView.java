@@ -13,7 +13,10 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * Client-side view for the suppliers module. Displays and manages remote Create
@@ -24,17 +27,35 @@ public class SuppliersModuleView extends AbstractBuildingModuleView {
     /** Local copy of supplier entries from server. */
     private final List<SuppliersModule.SupplierEntry> suppliers = new ArrayList<>();
 
+    /** Network status for each supplier, keyed by network ID. */
+    private final Map<UUID, SuppliersModule.NetworkStatus> networkStatuses = new HashMap<>();
+
     /** Whether speculative ordering research is unlocked. */
     private boolean speculativeUnlocked = false;
 
     @Override
     public void deserialize(@NotNull FriendlyByteBuf buf) {
         suppliers.clear();
+        networkStatuses.clear();
         int size = buf.readInt();
         for (int i = 0; i < size; i++) {
-            suppliers.add(SuppliersModule.SupplierEntry.fromBuf(buf));
+            SuppliersModule.SupplierEntry entry = SuppliersModule.SupplierEntry.fromBuf(buf);
+            SuppliersModule.NetworkStatus status = buf.readEnum(SuppliersModule.NetworkStatus.class);
+            suppliers.add(entry);
+            networkStatuses.put(entry.getNetworkId(), status);
         }
         speculativeUnlocked = buf.readBoolean();
+    }
+
+    /**
+     * Get the network status for a supplier.
+     *
+     * @param networkId
+     *            the network UUID.
+     * @return the network status, or OFFLINE if not found.
+     */
+    public SuppliersModule.NetworkStatus getNetworkStatus(UUID networkId) {
+        return networkStatuses.getOrDefault(networkId, SuppliersModule.NetworkStatus.OFFLINE);
     }
 
     @Override

@@ -12,6 +12,7 @@ import com.gr4v1ty.supplylines.network.messages.SetSupplierLabelMessage;
 import com.gr4v1ty.supplylines.network.messages.SetSupplierPriorityMessage;
 import com.gr4v1ty.supplylines.network.messages.SetSupplierSpeculativeMessage;
 import com.ldtteam.blockui.Pane;
+import com.ldtteam.blockui.PaneBuilders;
 import com.ldtteam.blockui.controls.Button;
 import com.ldtteam.blockui.controls.CheckBox;
 import com.ldtteam.blockui.controls.Text;
@@ -129,6 +130,10 @@ public class SuppliersModuleWindow extends AbstractModuleWindow<SuppliersModuleV
                 final Text networkIdLabel = rowPane.findPaneOfTypeByID(LABEL_NETWORK_ID, Text.class);
                 if (networkIdLabel != null) {
                     networkIdLabel.setText(Component.literal(CreateNetworkHelper.formatNetworkId(networkId)));
+
+                    // Tooltip showing full UUID
+                    PaneBuilders.tooltipBuilder().hoverPane(networkIdLabel).build()
+                            .setText(Component.literal(networkId.toString()));
                 }
 
                 final Text priorityLabel = rowPane.findPaneOfTypeByID(LABEL_PRIORITY, Text.class);
@@ -140,6 +145,10 @@ public class SuppliersModuleWindow extends AbstractModuleWindow<SuppliersModuleV
                 if (labelField != null) {
                     final String label = entry.getLabel();
                     labelField.setText(label);
+
+                    // Tooltip with description
+                    PaneBuilders.tooltipBuilder().hoverPane(labelField).build()
+                            .setText(Component.translatable("com.supplylines.gui.stockkeeper.suppliers.label.desc"));
 
                     // Set handler for when text changes and field loses focus
                     labelField.setHandler(textField -> {
@@ -157,6 +166,10 @@ public class SuppliersModuleWindow extends AbstractModuleWindow<SuppliersModuleV
                     final String address = entry.getRequestAddress();
                     addressField.setText(address);
 
+                    // Tooltip with description
+                    PaneBuilders.tooltipBuilder().hoverPane(addressField).build()
+                            .setText(Component.translatable("com.supplylines.gui.stockkeeper.suppliers.address.desc"));
+
                     // Set handler for when text changes and field loses focus
                     addressField.setHandler(textField -> {
                         final String newAddress = textField.getText();
@@ -170,15 +183,26 @@ public class SuppliersModuleWindow extends AbstractModuleWindow<SuppliersModuleV
 
                 final Text statusLabel = rowPane.findPaneOfTypeByID(LABEL_STATUS, Text.class);
                 if (statusLabel != null) {
-                    // TODO: Compute actual network status
-                    statusLabel.setText(
-                            Component.translatable("com.supplylines.gui.stockkeeper.suppliers.status.unknown"));
+                    final String statusKey = switch (moduleView.getNetworkStatus(networkId)) {
+                        case ONLINE -> "com.supplylines.gui.stockkeeper.suppliers.status.online";
+                        case EMPTY -> "com.supplylines.gui.stockkeeper.suppliers.status.empty";
+                        case OFFLINE -> "com.supplylines.gui.stockkeeper.suppliers.status.offline";
+                    };
+                    statusLabel.setText(Component.translatable(statusKey));
+
+                    // Tooltip with status description
+                    PaneBuilders.tooltipBuilder().hoverPane(statusLabel).build()
+                            .setText(Component.translatable(statusKey + ".desc"));
                 }
 
                 final CheckBox speculativeCheckbox = rowPane.findPaneOfTypeByID(CHECKBOX_SPECULATIVE, CheckBox.class);
                 if (speculativeCheckbox != null) {
                     speculativeCheckbox.setChecked(entry.allowsSpeculativeOrders());
                     if (moduleView.isSpeculativeUnlocked()) {
+                        // Tooltip with description
+                        PaneBuilders.tooltipBuilder().hoverPane(speculativeCheckbox).build().setText(
+                                Component.translatable("com.supplylines.gui.stockkeeper.suppliers.speculative.desc"));
+
                         speculativeCheckbox.setHandler(button -> {
                             final boolean newValue = speculativeCheckbox.isChecked();
                             if (newValue != entry.allowsSpeculativeOrders()) {
@@ -189,6 +213,10 @@ public class SuppliersModuleWindow extends AbstractModuleWindow<SuppliersModuleV
                         });
                     } else {
                         speculativeCheckbox.disable();
+
+                        // Tooltip showing locked message
+                        PaneBuilders.tooltipBuilder().hoverPane(speculativeCheckbox).build().setText(
+                                Component.translatable("com.supplylines.gui.stockkeeper.suppliers.speculative.locked"));
                     }
                 }
             }

@@ -3,6 +3,8 @@ package com.gr4v1ty.supplylines.colony.buildings.modules;
 import com.gr4v1ty.supplylines.util.ResearchEffects;
 import com.minecolonies.api.colony.buildings.modules.AbstractBuildingModule;
 import com.minecolonies.api.colony.buildings.modules.IPersistentModule;
+import com.simibubi.create.content.logistics.packager.InventorySummary;
+import com.simibubi.create.content.logistics.packagerLink.LogisticsManager;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -25,6 +27,18 @@ public class SuppliersModule extends AbstractBuildingModule implements IPersiste
     private static final String TAG_REQUEST_ADDRESS = "requestAddress";
     private static final String TAG_LABEL = "label";
     private static final String TAG_ALLOW_SPECULATIVE = "allowSpeculative";
+
+    /**
+     * Network status for display in the UI.
+     */
+    public enum NetworkStatus {
+        /** Network is online and has items. */
+        ONLINE,
+        /** Network is reachable but has no items. */
+        EMPTY,
+        /** Network could not be queried (may be unloaded or invalid). */
+        OFFLINE
+    }
 
     /**
      * List of supplier entries, ordered by priority.
@@ -318,10 +332,35 @@ public class SuppliersModule extends AbstractBuildingModule implements IPersiste
         buf.writeInt(suppliers.size());
         for (SupplierEntry entry : suppliers) {
             entry.toBuf(buf);
+            // Include network status for this supplier
+            NetworkStatus status = getNetworkStatus(entry.getNetworkId());
+            buf.writeEnum(status);
         }
         // Send whether speculative ordering research is unlocked
         boolean speculativeUnlocked = building.getColony().getResearchManager().getResearchEffects()
                 .getEffectStrength(ResearchEffects.SPECULATIVE_ORDERING) > 0;
         buf.writeBoolean(speculativeUnlocked);
+    }
+
+    /**
+     * Query the status of a Create logistics network.
+     *
+     * @param networkId
+     *            the network UUID to query.
+     * @return the network status.
+     */
+    private NetworkStatus getNetworkStatus(UUID networkId) {
+        try {
+            InventorySummary summary = LogisticsManager.getSummaryOfNetwork(networkId, false);
+            if (summary == null) {
+                return NetworkStatus.OFFLINE;
+            }
+            if (summary.isEmpty()) {
+                return NetworkStatus.EMPTY;
+            }
+            return NetworkStatus.ONLINE;
+        } catch (Exception e) {
+            return NetworkStatus.OFFLINE;
+        }
     }
 }

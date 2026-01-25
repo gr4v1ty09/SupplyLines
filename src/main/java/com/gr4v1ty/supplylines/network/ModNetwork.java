@@ -10,6 +10,7 @@ import com.gr4v1ty.supplylines.network.messages.SetSupplierAddressMessage;
 import com.gr4v1ty.supplylines.network.messages.SetSupplierLabelMessage;
 import com.gr4v1ty.supplylines.network.messages.SetSupplierPriorityMessage;
 import com.gr4v1ty.supplylines.network.messages.SetSupplierSpeculativeMessage;
+import com.gr4v1ty.supplylines.network.messages.TriggerSettingMessage;
 import com.minecolonies.api.network.IMessage;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -52,6 +53,9 @@ public class ModNetwork {
 
         // Register scepter messages
         registerMessage(GiveScepterMessage.class, GiveScepterMessage::new);
+
+        // Register settings messages
+        registerMessage(TriggerSettingMessage.class, TriggerSettingMessage::new);
     }
 
     /**

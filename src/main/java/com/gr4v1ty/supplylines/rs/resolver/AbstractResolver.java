@@ -282,6 +282,13 @@ public abstract class AbstractResolver<T extends IRequestable> implements IReque
 
         this.awardSkillXP(manager, completedRequest);
 
+        // Track per-item delivery statistics
+        if (building != null) {
+            for (DeliveryPlanning.Pick pick : picks) {
+                building.trackItemDelivery(pick.payload.getStack(), pick.count);
+            }
+        }
+
         if (!picks.isEmpty()) {
             StringBuilder sources = new StringBuilder();
             for (DeliveryPlanning.Pick pick : picks) {

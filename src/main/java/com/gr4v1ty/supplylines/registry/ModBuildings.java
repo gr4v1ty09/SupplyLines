@@ -19,7 +19,11 @@ public final class ModBuildings {
                     .setBuildingProducer(BuildingStockKeeper::new).setBuildingViewProducer(() -> EmptyView::new)
                     .addBuildingModuleProducer(ModBuildingModules.STOCK_KEEPER_WORK)
                     .addBuildingModuleProducer(ModBuildingModules.SUPPLIERS)
-                    .addBuildingModuleProducer(ModBuildingModules.RESTOCK_POLICY).createBuildingEntry());
+                    .addBuildingModuleProducer(ModBuildingModules.RESTOCK_POLICY)
+                    .addBuildingModuleProducer(ModBuildingModules.DELIVERY_SETTINGS)
+                    // Statistics module registered last to appear as bottom tab (MineColonies
+                    // convention)
+                    .addBuildingModuleProducer(ModBuildingModules.DELIVERY_STATISTICS).createBuildingEntry());
 
     private ModBuildings() {
     }

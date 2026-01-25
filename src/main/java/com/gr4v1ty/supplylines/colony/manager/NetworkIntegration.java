@@ -25,6 +25,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.TagKey;
@@ -41,8 +42,24 @@ public final class NetworkIntegration {
     private static final Logger LOGGER = LoggerFactory.getLogger(NetworkIntegration.class);
     private static final String DELIVERY_FROGPORT_NAME = "SK_Deliveries";
 
-    private static long getStagingTimeoutTicks() {
-        return ModConfig.SERVER.stagingTimeoutTicks.get();
+    /** Provider for staging timeout ticks (per-building setting) */
+    @Nullable
+    private IntSupplier stagingTimeoutProvider;
+
+    private long getStagingTimeoutTicks() {
+        return stagingTimeoutProvider != null
+                ? stagingTimeoutProvider.getAsInt()
+                : ModConfig.SERVER.stagingTimeoutTicks.get();
+    }
+
+    /**
+     * Sets the provider for staging timeout ticks.
+     *
+     * @param provider
+     *            Supplier for the timeout value, or null for global config
+     */
+    public void setStagingTimeoutProvider(@Nullable IntSupplier provider) {
+        this.stagingTimeoutProvider = provider;
     }
 
     private static long getBufferWindowTicks() {

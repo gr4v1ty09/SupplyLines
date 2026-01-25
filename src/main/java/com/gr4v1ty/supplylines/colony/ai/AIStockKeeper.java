@@ -26,48 +26,55 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         return ModConfig.SERVER.stateMachineTickRate.get();
     }
 
-    /** Gets the walk speed from config */
-    private static double getWalkSpeed() {
-        return ModConfig.SERVER.walkSpeed.get();
+    /** Gets the walk speed for the given building */
+    private static double getWalkSpeed(BuildingStockKeeper building) {
+        return building != null ? building.getWalkSpeed() : ModConfig.SERVER.walkSpeed.get();
     }
 
-    /** Gets the arrival distance squared from config */
-    private static double getArriveDistanceSq() {
-        return ModConfig.SERVER.arriveDistanceSq.get();
+    /** Gets the arrival distance squared for the given building */
+    private static double getArriveDistanceSq(BuildingStockKeeper building) {
+        return building != null ? building.getArriveDistanceSq() : ModConfig.SERVER.arriveDistanceSq.get();
     }
 
-    /** Gets the inspect duration in state machine ticks from config */
-    private static int getInspectDurationTicks() {
-        return ModConfig.SERVER.inspectDurationTicks.get();
+    /** Gets the inspect duration in state machine ticks for the given building */
+    private static int getInspectDurationTicks(BuildingStockKeeper building) {
+        return building != null ? building.getInspectDurationTicks() : ModConfig.SERVER.inspectDurationTicks.get();
     }
 
-    /** Returns whether idle wander is enabled */
-    private static boolean isIdleWanderEnabled() {
-        return ModConfig.SERVER.enableIdleWander.get();
+    /** Returns whether idle wander is enabled for the given building */
+    private static boolean isIdleWanderEnabled(BuildingStockKeeper building) {
+        return building != null ? building.isIdleWanderEnabled() : ModConfig.SERVER.enableIdleWander.get();
     }
 
-    /** Returns idle wander chance (0-100) */
-    private static int getIdleWanderChance() {
-        return ModConfig.SERVER.idleWanderChance.get();
+    /** Returns idle wander chance (0-100) for the given building */
+    private static int getIdleWanderChance(BuildingStockKeeper building) {
+        return building != null ? building.getIdleWanderChance() : ModConfig.SERVER.idleWanderChance.get();
     }
 
-    /** Returns cooldown in game ticks (config is in seconds) */
-    private static int getIdleWanderCooldownTicks() {
-        return ModConfig.SERVER.idleWanderCooldown.get() * 20;
+    /**
+     * Returns cooldown in game ticks for the given building (config is in seconds)
+     */
+    private static int getIdleWanderCooldownTicks(BuildingStockKeeper building) {
+        int seconds = building != null ? building.getIdleWanderCooldown() : ModConfig.SERVER.idleWanderCooldown.get();
+        return seconds * 20;
     }
 
-    /** Returns inspect duration in state machine ticks (config is in seconds) */
-    private static int getIdleInspectDuration() {
+    /**
+     * Returns inspect duration in state machine ticks for the given building
+     * (config is in seconds)
+     */
+    private static int getIdleInspectDuration(BuildingStockKeeper building) {
         int tickRate = getStateMachineTickRate();
         if (tickRate <= 0) {
             tickRate = 20;
         }
-        return (ModConfig.SERVER.idleInspectDuration.get() * 20) / tickRate;
+        int seconds = building != null ? building.getIdleInspectDuration() : ModConfig.SERVER.idleInspectDuration.get();
+        return (seconds * 20) / tickRate;
     }
 
-    /** Returns whether patrol should be randomized */
-    private static boolean isPatrolRandomized() {
-        return ModConfig.SERVER.randomPatrol.get();
+    /** Returns whether patrol should be randomized for the given building */
+    private static boolean isPatrolRandomized(BuildingStockKeeper building) {
+        return building != null ? building.isRandomPatrol() : ModConfig.SERVER.randomPatrol.get();
     }
 
     private enum Phase {
@@ -125,18 +132,18 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                 double distSq = entity.distanceToSqr(workTarget.getX() + 0.5, workTarget.getY() + 0.5,
                         workTarget.getZ() + 0.5);
 
-                if (distSq <= getArriveDistanceSq()) {
+                if (distSq <= getArriveDistanceSq(hut)) {
                     entity.getNavigation().stop();
                     phase = Phase.WORKING;
                 } else {
                     entity.getNavigation().moveTo(workTarget.getX() + 0.5, workTarget.getY() + 1.0,
-                            workTarget.getZ() + 0.5, getWalkSpeed());
+                            workTarget.getZ() + 0.5, getWalkSpeed(hut));
                 }
                 break;
 
             case WORKING :
                 // Check if we drifted too far (e.g., after sleeping)
-                if (checkDriftAndReset(entity, workTarget)) {
+                if (checkDriftAndReset(entity, workTarget, hut)) {
                     break;
                 }
 
@@ -187,20 +194,20 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                 double patrolDistSq = entity.distanceToSqr(patrolTarget.getX() + 0.5, patrolTarget.getY() + 0.5,
                         patrolTarget.getZ() + 0.5);
 
-                if (patrolDistSq <= getArriveDistanceSq()) {
+                if (patrolDistSq <= getArriveDistanceSq(hut)) {
                     entity.getNavigation().stop();
                     phase = Phase.INSPECTING;
                     inspectTicks = 0;
                 } else {
                     // Navigate to belt level (not on top of it)
                     entity.getNavigation().moveTo(patrolTarget.getX() + 0.5, patrolTarget.getY(),
-                            patrolTarget.getZ() + 0.5, getWalkSpeed());
+                            patrolTarget.getZ() + 0.5, getWalkSpeed(hut));
                 }
                 break;
 
             case INSPECTING :
                 // Check if we drifted too far (e.g., after sleeping)
-                if (checkDriftAndReset(entity, patrolTarget)) {
+                if (checkDriftAndReset(entity, patrolTarget, hut)) {
                     break;
                 }
 
@@ -218,7 +225,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                 inspectTicks++;
 
                 // Done inspecting, return to main work position
-                if (inspectTicks >= getInspectDurationTicks()) {
+                if (inspectTicks >= getInspectDurationTicks(hut)) {
                     resetToWalking();
                 }
                 break;
@@ -232,19 +239,19 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                 double idleDistSq = entity.distanceToSqr(patrolTarget.getX() + 0.5, patrolTarget.getY() + 0.5,
                         patrolTarget.getZ() + 0.5);
 
-                if (idleDistSq <= getArriveDistanceSq()) {
+                if (idleDistSq <= getArriveDistanceSq(hut)) {
                     entity.getNavigation().stop();
                     phase = Phase.IDLE_INSPECT;
                     inspectTicks = 0;
                 } else {
                     entity.getNavigation().moveTo(patrolTarget.getX() + 0.5, patrolTarget.getY(),
-                            patrolTarget.getZ() + 0.5, getWalkSpeed());
+                            patrolTarget.getZ() + 0.5, getWalkSpeed(hut));
                 }
                 break;
 
             case IDLE_INSPECT :
                 // Check drift
-                if (checkDriftAndReset(entity, patrolTarget)) {
+                if (checkDriftAndReset(entity, patrolTarget, hut)) {
                     break;
                 }
 
@@ -262,7 +269,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
                 inspectTicks++;
 
                 // Done inspecting, return to work
-                if (inspectTicks >= getIdleInspectDuration()) {
+                if (inspectTicks >= getIdleInspectDuration(hut)) {
                     resetToWalking();
                 }
                 break;
@@ -274,12 +281,12 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
      * Checks if the worker has drifted too far from the target (e.g., after
      * sleeping). If so, resets state and returns true.
      */
-    private boolean checkDriftAndReset(AbstractEntityCitizen entity, BlockPos target) {
+    private boolean checkDriftAndReset(AbstractEntityCitizen entity, BlockPos target, BuildingStockKeeper hut) {
         if (target == null) {
             return false;
         }
         double distSq = entity.distanceToSqr(target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5);
-        if (distSq > getArriveDistanceSq() * 4) {
+        if (distSq > getArriveDistanceSq(hut) * 4) {
             resetToWalking();
             return true;
         }
@@ -299,7 +306,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
      * Determines if idle wander should be triggered.
      */
     private boolean shouldTriggerIdleWander(BuildingStockKeeper hut) {
-        if (!isIdleWanderEnabled()) {
+        if (!isIdleWanderEnabled(hut)) {
             return false;
         }
         if (hut == null || this.world == null) {
@@ -308,12 +315,12 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
 
         // Check cooldown
         long now = this.world.getGameTime();
-        if (now - lastIdleWanderTick < getIdleWanderCooldownTicks()) {
+        if (now - lastIdleWanderTick < getIdleWanderCooldownTicks(hut)) {
             return false;
         }
 
         // Random chance
-        return rnd.nextInt(100) < getIdleWanderChance();
+        return rnd.nextInt(100) < getIdleWanderChance(hut);
     }
 
     /**
@@ -353,7 +360,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         List<BlockPos> validCandidates = new ArrayList<>();
         for (BlockPos pos : candidates) {
             double distSq = currentPos.distSqr(pos);
-            if (distSq > getArriveDistanceSq() * 2) {
+            if (distSq > getArriveDistanceSq(hut) * 2) {
                 validCandidates.add(pos);
             }
         }
@@ -439,7 +446,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         List<BlockPos> validCandidates = new ArrayList<>();
         for (BlockPos pos : candidates) {
             double distSq = currentPos.distSqr(pos);
-            if (distSq > getArriveDistanceSq() * 2) {
+            if (distSq > getArriveDistanceSq(hut) * 2) {
                 validCandidates.add(pos);
             }
         }
@@ -449,7 +456,7 @@ public class AIStockKeeper extends AbstractEntityAIInteract<JobStockKeeper, Buil
         }
 
         // Randomized or sequential selection based on config
-        if (isPatrolRandomized()) {
+        if (isPatrolRandomized(hut)) {
             return validCandidates.get(rnd.nextInt(validCandidates.size()));
         } else {
             patrolIndex = (patrolIndex + 1) % validCandidates.size();

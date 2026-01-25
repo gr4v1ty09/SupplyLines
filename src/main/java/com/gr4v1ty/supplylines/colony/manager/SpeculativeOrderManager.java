@@ -35,7 +35,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.IntSupplier;
 
 /**
  * Manages speculative ordering from remote Create network suppliers when colony
@@ -53,11 +55,6 @@ import java.util.function.Consumer;
 public final class SpeculativeOrderManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(SpeculativeOrderManager.class);
 
-    /** Gets the master switch for speculative ordering from config */
-    private static boolean isSpeculativeOrderingEnabled() {
-        return ModConfig.SERVER.enableSpeculativeOrdering.get();
-    }
-
     /**
      * Checks if speculative ordering is unlocked via research for the given colony.
      *
@@ -70,13 +67,29 @@ public final class SpeculativeOrderManager {
                 .getEffectStrength(ResearchEffects.SPECULATIVE_ORDERING) > 0;
     }
 
-    /** Gets the delay before triggering speculative order from config */
-    private static long getSpeculativeDelayTicks() {
-        return ModConfig.SERVER.speculativeDelayTicks.get();
-    }
-
     private final IColony colony;
     private long lastCheckTick = Long.MIN_VALUE;
+
+    /**
+     * Settings provider: whether speculative ordering is enabled (wired by
+     * BuildingStockKeeper)
+     */
+    @Nullable
+    private BooleanSupplier speculativeEnabledProvider;
+
+    /**
+     * Settings provider: delay before triggering speculative order (wired by
+     * BuildingStockKeeper)
+     */
+    @Nullable
+    private IntSupplier speculativeDelayProvider;
+
+    /**
+     * Settings provider: default delivery time for ETA (wired by
+     * BuildingStockKeeper)
+     */
+    @Nullable
+    private IntSupplier defaultDeliveryProvider;
 
     /**
      * Tracks unfulfilled requests: requestId -> UnfulfilledRequest. Uses
@@ -91,6 +104,10 @@ public final class SpeculativeOrderManager {
     /** Listener for request completion events (wired by BuildingStockKeeper) */
     @Nullable
     private Consumer<IToken<?>> requestCompletedListener;
+
+    /** Listener for statistics events (wired by BuildingStockKeeper) */
+    @Nullable
+    private Runnable orderCountListener;
 
     /**
      * Represents an unfulfilled colony request being tracked for speculative
@@ -122,15 +139,17 @@ public final class SpeculativeOrderManager {
         private final ItemStack item;
         private final int quantity;
         public final long requestedAtTick;
+        private final int estimatedDeliveryTicks;
         public final UUID supplierNetworkId;
         public final IToken<?> forRequestId;
 
-        public SpeculativeOrder(ItemStack item, int quantity, long requestedAtTick, UUID supplierNetworkId,
-                IToken<?> forRequestId) {
+        public SpeculativeOrder(ItemStack item, int quantity, long requestedAtTick, int estimatedDeliveryTicks,
+                UUID supplierNetworkId, IToken<?> forRequestId) {
             this.orderId = ORDER_COUNTER.incrementAndGet();
             this.item = item.copy();
             this.quantity = quantity;
             this.requestedAtTick = requestedAtTick;
+            this.estimatedDeliveryTicks = estimatedDeliveryTicks;
             this.supplierNetworkId = supplierNetworkId;
             this.forRequestId = forRequestId;
         }
@@ -147,7 +166,7 @@ public final class SpeculativeOrderManager {
 
         @Override
         public long getEstimatedArrivalTick() {
-            return requestedAtTick + ModConfig.SERVER.defaultDeliveryTicks.get();
+            return requestedAtTick + estimatedDeliveryTicks;
         }
     }
 
@@ -186,6 +205,73 @@ public final class SpeculativeOrderManager {
      */
     public void setRequestCompletedListener(@Nullable Consumer<IToken<?>> listener) {
         this.requestCompletedListener = listener;
+    }
+
+    /**
+     * Sets the listener for statistics tracking (called once per order placed).
+     *
+     * @param listener
+     *            Runnable to be notified when an order is placed
+     */
+    public void setOrderCountListener(@Nullable Runnable listener) {
+        this.orderCountListener = listener;
+    }
+
+    /**
+     * Sets the provider for speculative ordering enabled setting.
+     *
+     * @param provider
+     *            Supplier returning whether speculative ordering is enabled
+     */
+    public void setSpeculativeEnabledProvider(@Nullable BooleanSupplier provider) {
+        this.speculativeEnabledProvider = provider;
+    }
+
+    /**
+     * Sets the provider for speculative delay setting.
+     *
+     * @param provider
+     *            Supplier returning the delay in ticks before ordering
+     *            speculatively
+     */
+    public void setSpeculativeDelayProvider(@Nullable IntSupplier provider) {
+        this.speculativeDelayProvider = provider;
+    }
+
+    /**
+     * Sets the provider for default delivery time setting.
+     *
+     * @param provider
+     *            Supplier returning the default delivery time in ticks
+     */
+    public void setDefaultDeliveryProvider(@Nullable IntSupplier provider) {
+        this.defaultDeliveryProvider = provider;
+    }
+
+    /**
+     * Gets whether speculative ordering is enabled (from provider or global config)
+     */
+    private boolean isSpeculativeOrderingEnabled() {
+        return speculativeEnabledProvider != null
+                ? speculativeEnabledProvider.getAsBoolean()
+                : ModConfig.SERVER.enableSpeculativeOrdering.get();
+    }
+
+    /**
+     * Gets the delay before triggering speculative order (from provider or global
+     * config)
+     */
+    private long getSpeculativeDelayTicks() {
+        return speculativeDelayProvider != null
+                ? speculativeDelayProvider.getAsInt()
+                : ModConfig.SERVER.speculativeDelayTicks.get();
+    }
+
+    /** Gets the default delivery time for ETA (from provider or global config) */
+    private int getDefaultDeliveryTicks() {
+        return defaultDeliveryProvider != null
+                ? defaultDeliveryProvider.getAsInt()
+                : ModConfig.SERVER.defaultDeliveryTicks.get();
     }
 
     /**
@@ -228,8 +314,6 @@ public final class SpeculativeOrderManager {
         // Check if any suppliers have speculative ordering enabled
         List<SupplierEntry> suppliers = suppliersModule.getSuppliers();
         long speculativeCount = suppliers.stream().filter(SupplierEntry::allowsSpeculativeOrders).count();
-        LOGGER.debug("{} Speculative check: {} suppliers total, {} with speculative enabled", LogTags.ORDERING,
-                suppliers.size(), speculativeCount);
 
         if (speculativeCount == 0) {
             // No need to track requests if no suppliers allow speculative ordering
@@ -407,11 +491,16 @@ public final class SpeculativeOrderManager {
                 req.speculativeOrderPlaced = true;
 
                 SpeculativeOrder specOrder = new SpeculativeOrder(req.item, result.availableQuantity, now,
-                        supplier.getNetworkId(), req.requestId);
+                        getDefaultDeliveryTicks(), supplier.getNetworkId(), req.requestId);
 
                 // Fire event (DisplayBoardManager tracks it)
                 if (orderPlacedListener != null) {
                     orderPlacedListener.accept(specOrder);
+                }
+
+                // Track statistics
+                if (orderCountListener != null) {
+                    orderCountListener.run();
                 }
 
                 String supplierLabel = supplier.getLabel().isEmpty()

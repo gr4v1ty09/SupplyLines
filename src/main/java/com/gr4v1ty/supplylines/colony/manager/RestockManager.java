@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.IntSupplier;
 import java.util.stream.Collectors;
 
 /**
@@ -38,11 +39,6 @@ import java.util.stream.Collectors;
 public final class RestockManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(RestockManager.class);
 
-    /** Gets the default assumed delivery time for ETA calculation from config */
-    private static long getDefaultDeliveryTicks() {
-        return ModConfig.SERVER.defaultDeliveryTicks.get();
-    }
-
     @SuppressWarnings("unused")
     private final IColony colony;
     private long lastRestockCheckTick = Long.MIN_VALUE;
@@ -50,6 +46,17 @@ public final class RestockManager {
     /** Listener for order placement events (wired by BuildingStockKeeper) */
     @Nullable
     private Consumer<IncomingOrder> orderPlacedListener;
+
+    /** Listener for statistics events (wired by BuildingStockKeeper) */
+    @Nullable
+    private Runnable orderCountListener;
+
+    /**
+     * Settings provider: default delivery time for ETA (wired by
+     * BuildingStockKeeper)
+     */
+    @Nullable
+    private IntSupplier defaultDeliveryProvider;
 
     /** Items that have pending orders - prevents duplicate orders */
     private final Set<ItemMatch.ItemStackKey> pendingOrderItems = new HashSet<>();
@@ -64,13 +71,16 @@ public final class RestockManager {
         private final ItemStack item;
         private final int quantity;
         public final long requestedAtTick;
+        private final int estimatedDeliveryTicks;
         public final UUID supplierNetworkId;
 
-        public RestockOrder(ItemStack item, int quantity, long requestedAtTick, UUID supplierNetworkId) {
+        public RestockOrder(ItemStack item, int quantity, long requestedAtTick, int estimatedDeliveryTicks,
+                UUID supplierNetworkId) {
             this.orderId = ORDER_COUNTER.incrementAndGet();
             this.item = item.copy();
             this.quantity = quantity;
             this.requestedAtTick = requestedAtTick;
+            this.estimatedDeliveryTicks = estimatedDeliveryTicks;
             this.supplierNetworkId = supplierNetworkId;
         }
 
@@ -86,7 +96,7 @@ public final class RestockManager {
 
         @Override
         public long getEstimatedArrivalTick() {
-            return requestedAtTick + getDefaultDeliveryTicks();
+            return requestedAtTick + estimatedDeliveryTicks;
         }
     }
 
@@ -131,6 +141,33 @@ public final class RestockManager {
      */
     public void setOrderPlacedListener(@Nullable Consumer<IncomingOrder> listener) {
         this.orderPlacedListener = listener;
+    }
+
+    /**
+     * Sets the listener for statistics tracking (called once per order placed).
+     *
+     * @param listener
+     *            Runnable to be notified when an order is placed
+     */
+    public void setOrderCountListener(@Nullable Runnable listener) {
+        this.orderCountListener = listener;
+    }
+
+    /**
+     * Sets the provider for default delivery time setting.
+     *
+     * @param provider
+     *            Supplier returning the default delivery time in ticks
+     */
+    public void setDefaultDeliveryProvider(@Nullable IntSupplier provider) {
+        this.defaultDeliveryProvider = provider;
+    }
+
+    /** Gets the default delivery time for ETA (from provider or global config) */
+    private int getDefaultDeliveryTicks() {
+        return defaultDeliveryProvider != null
+                ? defaultDeliveryProvider.getAsInt()
+                : ModConfig.SERVER.defaultDeliveryTicks.get();
     }
 
     /**
@@ -356,9 +393,14 @@ public final class RestockManager {
                     ItemMatch.ItemStackKey itemKey = new ItemMatch.ItemStackKey(req.item);
                     pendingOrderItems.add(itemKey);
 
-                    RestockOrder newOrder = new RestockOrder(req.item, req.quantity, now, supplier.getNetworkId());
+                    RestockOrder newOrder = new RestockOrder(req.item, req.quantity, now, getDefaultDeliveryTicks(),
+                            supplier.getNetworkId());
                     if (orderPlacedListener != null) {
                         orderPlacedListener.accept(newOrder);
+                    }
+                    // Track statistics
+                    if (orderCountListener != null) {
+                        orderCountListener.run();
                     }
                     LOGGER.debug("{} Order placed: {} x{} orderId={}", LogTags.ORDERING,
                             req.item.getDisplayName().getString(), req.quantity, newOrder.orderId);

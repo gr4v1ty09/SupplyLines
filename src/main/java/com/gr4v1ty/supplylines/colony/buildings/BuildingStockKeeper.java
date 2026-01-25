@@ -13,6 +13,8 @@ import com.gr4v1ty.supplylines.colony.manager.migration.TrainStationMigrationMan
 import com.gr4v1ty.supplylines.colony.manager.migration.data.PanelMigrationData;
 import com.gr4v1ty.supplylines.colony.manager.migration.data.TrainStationMigrationData;
 import com.gr4v1ty.supplylines.colony.buildings.modules.RestockPolicyModule;
+import com.gr4v1ty.supplylines.colony.buildings.modules.DeliverySettingsModule;
+import com.gr4v1ty.supplylines.colony.buildings.modules.DeliveryStatisticsModule;
 import com.gr4v1ty.supplylines.colony.buildings.modules.SuppliersModule;
 import com.gr4v1ty.supplylines.util.ItemMatch;
 import com.gr4v1ty.supplylines.util.RequestTypes;
@@ -146,6 +148,20 @@ public class BuildingStockKeeper extends AbstractBuilding {
 
         // Wire order cleared callback to RestockManager
         this.displayBoardManager.setOrderClearedListener(this.restockManager::onOrderCleared);
+
+        // Wire statistics tracking
+        this.restockManager
+                .setOrderCountListener(() -> this.incrementStat(DeliveryStatisticsModule.STAT_RESTOCK_ORDERS));
+        this.speculativeOrderManager
+                .setOrderCountListener(() -> this.incrementStat(DeliveryStatisticsModule.STAT_SPECULATIVE_ORDERS));
+
+        // Wire per-building settings providers
+        this.speculativeOrderManager.setSpeculativeEnabledProvider(this::isSpeculativeOrderingEnabled);
+        this.speculativeOrderManager.setSpeculativeDelayProvider(this::getSpeculativeDelayTicks);
+        this.speculativeOrderManager.setDefaultDeliveryProvider(this::getDefaultDeliveryTicks);
+        this.restockManager.setDefaultDeliveryProvider(this::getDefaultDeliveryTicks);
+        this.displayBoardManager.setOrderExpiryBufferProvider(this::getOrderExpiryBufferTicks);
+        this.networkIntegration.setStagingTimeoutProvider(this::getStagingTimeoutTicks);
     }
 
     private void ensureRSRegistered(Level level) {
@@ -321,17 +337,16 @@ public class BuildingStockKeeper extends AbstractBuilding {
 
     public void scanIfDue(Level level) {
 
-        @SuppressWarnings("unused")
-        boolean racksChanged;
-
         IColony mcolony;
         this.ensureSkillManagerInitialized();
         int interval = this.skillManager != null
                 ? this.skillManager.getRescanIntervalTicks()
                 : getDefaultRescanIntervalTicks();
-        if (this.blockScanner.isScanDue(level, interval)
-                && (racksChanged = this.blockScanner.rescan(level, this.getBuildingLevel()))
-                && (mcolony = this.getColony()) != null) {
+        if (!this.blockScanner.isScanDue(level, interval)) {
+            return;
+        }
+        boolean racksChanged = this.blockScanner.rescan(level, this.getBuildingLevel());
+        if (racksChanged && (mcolony = this.getColony()) != null) {
             try {
                 LOGGER.debug("{} scanIfDue: onColonyUpdate triggered (racksChanged=true)", LogTags.ORDERING);
                 mcolony.getRequestManager().onColonyUpdate(req -> this.shouldReEvaluateRequest(req, null, "scanIfDue"));
@@ -611,6 +626,214 @@ public class BuildingStockKeeper extends AbstractBuilding {
         if (this.skillManager != null) {
             this.skillManager.awardWorkerSkillXP(baseXp);
         }
+    }
+
+    /**
+     * Increment a building statistic by 1.
+     *
+     * @param statId
+     *            the stat ID to increment (use constants from
+     *            DeliveryStatisticsModule).
+     */
+    @SuppressWarnings("deprecation")
+    public void incrementStat(String statId) {
+        DeliveryStatisticsModule statsModule = this.getFirstModuleOccurance(DeliveryStatisticsModule.class);
+        if (statsModule != null) {
+            statsModule.increment(statId);
+        }
+    }
+
+    /**
+     * Increment a building statistic by a given count.
+     *
+     * @param statId
+     *            the stat ID to increment (use constants from
+     *            DeliveryStatisticsModule).
+     * @param count
+     *            the count to add.
+     */
+    @SuppressWarnings("deprecation")
+    public void incrementStatBy(String statId, int count) {
+        DeliveryStatisticsModule statsModule = this.getFirstModuleOccurance(DeliveryStatisticsModule.class);
+        if (statsModule != null) {
+            statsModule.incrementBy(statId, count);
+        }
+    }
+
+    /**
+     * Track an item delivery for statistics.
+     *
+     * @param item
+     *            the item stack being delivered.
+     * @param count
+     *            the number of items delivered.
+     */
+    @SuppressWarnings("deprecation")
+    public void trackItemDelivery(ItemStack item, int count) {
+        DeliveryStatisticsModule statsModule = this.getFirstModuleOccurance(DeliveryStatisticsModule.class);
+        if (statsModule != null) {
+            statsModule.trackItemDelivery(item, count);
+        }
+    }
+
+    // === Per-Building Settings Helpers ===
+
+    /**
+     * Gets the settings module for this building.
+     *
+     * @return the settings module, or null if not available.
+     */
+    @SuppressWarnings("deprecation")
+    @Nullable
+    private DeliverySettingsModule getSettingsModule() {
+        return this.getFirstModuleOccurance(DeliverySettingsModule.class);
+    }
+
+    /**
+     * Gets whether speculative ordering is enabled for this building. Falls back to
+     * global config if not explicitly set.
+     *
+     * @return true if speculative ordering is enabled.
+     */
+    public boolean isSpeculativeOrderingEnabled() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null
+                ? module.isSpeculativeOrderingEnabled()
+                : ModConfig.SERVER.enableSpeculativeOrdering.get();
+    }
+
+    /**
+     * Gets whether idle wander/patrol is enabled for this building. Falls back to
+     * global config if not explicitly set.
+     *
+     * @return true if idle wander is enabled.
+     */
+    public boolean isIdleWanderEnabled() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.isIdleWanderEnabled() : ModConfig.SERVER.enableIdleWander.get();
+    }
+
+    /**
+     * Gets whether random patrol order is enabled for this building. Falls back to
+     * global config if not explicitly set.
+     *
+     * @return true if random patrol is enabled.
+     */
+    public boolean isRandomPatrol() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.isRandomPatrol() : ModConfig.SERVER.randomPatrol.get();
+    }
+
+    /**
+     * Gets the order expiry buffer ticks for this building. Falls back to global
+     * config if not explicitly set.
+     *
+     * @return order expiry buffer in ticks.
+     */
+    public int getOrderExpiryBufferTicks() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.getOrderExpiryBufferTicks() : ModConfig.SERVER.orderExpiryBufferTicks.get();
+    }
+
+    /**
+     * Gets the speculative delay ticks for this building. Falls back to global
+     * config if not explicitly set.
+     *
+     * @return speculative delay in ticks.
+     */
+    public int getSpeculativeDelayTicks() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.getSpeculativeDelayTicks() : ModConfig.SERVER.speculativeDelayTicks.get();
+    }
+
+    /**
+     * Gets the default delivery ticks for this building. Falls back to global
+     * config if not explicitly set.
+     *
+     * @return default delivery time in ticks.
+     */
+    public int getDefaultDeliveryTicks() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.getDefaultDeliveryTicks() : ModConfig.SERVER.defaultDeliveryTicks.get();
+    }
+
+    /**
+     * Gets the staging timeout ticks for this building. Falls back to global config
+     * if not explicitly set.
+     *
+     * @return staging timeout in ticks.
+     */
+    public int getStagingTimeoutTicks() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.getStagingTimeoutTicks() : ModConfig.SERVER.stagingTimeoutTicks.get();
+    }
+
+    // === AI/Movement Setting Helpers ===
+
+    /**
+     * Gets the walk speed multiplier for this building. Falls back to global config
+     * if not explicitly set.
+     *
+     * @return walk speed multiplier (0.5-2.0).
+     */
+    public double getWalkSpeed() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.getWalkSpeed() : ModConfig.SERVER.walkSpeed.get();
+    }
+
+    /**
+     * Gets the arrival distance squared for this building. Falls back to global
+     * config if not explicitly set.
+     *
+     * @return arrival distance squared (1.0-16.0).
+     */
+    public double getArriveDistanceSq() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.getArriveDistanceSq() : ModConfig.SERVER.arriveDistanceSq.get();
+    }
+
+    /**
+     * Gets the inspect duration in state machine ticks for this building. Falls
+     * back to global config if not explicitly set.
+     *
+     * @return inspect duration in state machine ticks.
+     */
+    public int getInspectDurationTicks() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.getInspectDurationTicks() : ModConfig.SERVER.inspectDurationTicks.get();
+    }
+
+    /**
+     * Gets the idle wander chance for this building. Falls back to global config if
+     * not explicitly set.
+     *
+     * @return idle wander chance (0-100).
+     */
+    public int getIdleWanderChance() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.getIdleWanderChance() : ModConfig.SERVER.idleWanderChance.get();
+    }
+
+    /**
+     * Gets the idle wander cooldown in seconds for this building. Falls back to
+     * global config if not explicitly set.
+     *
+     * @return idle wander cooldown in seconds.
+     */
+    public int getIdleWanderCooldown() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.getIdleWanderCooldown() : ModConfig.SERVER.idleWanderCooldown.get();
+    }
+
+    /**
+     * Gets the idle inspect duration in seconds for this building. Falls back to
+     * global config if not explicitly set.
+     *
+     * @return idle inspect duration in seconds.
+     */
+    public int getIdleInspectDuration() {
+        DeliverySettingsModule module = getSettingsModule();
+        return module != null ? module.getIdleInspectDuration() : ModConfig.SERVER.idleInspectDuration.get();
     }
 
     @Override

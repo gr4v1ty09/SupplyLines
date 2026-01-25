@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.IntSupplier;
 
 /**
  * Manages the display board showing incoming shipments. Owns order tracking
@@ -46,6 +47,10 @@ public final class DisplayBoardManager {
     @Nullable
     private Consumer<ItemMatch.ItemStackKey> orderClearedListener;
 
+    /** Provider for order expiry buffer ticks (per-building setting) */
+    @Nullable
+    private IntSupplier orderExpiryBufferProvider;
+
     /** Gets the display board update interval from config */
     private static int getDisplayUpdateIntervalTicks() {
         return ModConfig.SERVER.displayUpdateIntervalTicks.get();
@@ -61,9 +66,21 @@ public final class DisplayBoardManager {
         return ModConfig.SERVER.etaFormatThresholdSeconds.get();
     }
 
-    /** Gets the extra buffer time after ETA before removing order from config */
-    private static long getOrderExpiryBufferTicks() {
-        return ModConfig.SERVER.orderExpiryBufferTicks.get();
+    /** Gets the extra buffer time after ETA before removing order */
+    private long getOrderExpiryBufferTicks() {
+        return orderExpiryBufferProvider != null
+                ? orderExpiryBufferProvider.getAsInt()
+                : ModConfig.SERVER.orderExpiryBufferTicks.get();
+    }
+
+    /**
+     * Sets the provider for order expiry buffer ticks.
+     *
+     * @param provider
+     *            Supplier for the expiry buffer value, or null for global config
+     */
+    public void setOrderExpiryBufferProvider(@Nullable IntSupplier provider) {
+        this.orderExpiryBufferProvider = provider;
     }
 
     /**

@@ -98,6 +98,9 @@ public final class ServerConfig {
         // Timing/Performance
         builder.comment("Timing and Performance Settings").push("timing");
 
+        // Worker Cycle subgroup
+        builder.comment("Stock Keeper work cycle intervals").push("workerCycle");
+
         defaultRescanIntervalTicks = builder
                 .comment("Default interval for rack rescan when no worker skill applies (ticks).",
                         "20 ticks = 1 second.")
@@ -109,6 +112,20 @@ public final class ServerConfig {
         defaultRestockIntervalTicks = builder.comment("Default interval for restock policy checks (ticks).")
                 .defineInRange("defaultRestockIntervalTicks", 600, 100, 3600);
 
+        defaultInvSigIntervalTicks = builder
+                .comment("Interval for inventory signature refresh checks (ticks).", "Default 40 = 2 seconds.")
+                .defineInRange("defaultInvSigIntervalTicks", 40, 10, 200);
+
+        defaultStagingProcessIntervalTicks = builder
+                .comment("Interval for staging process when no skill manager available (ticks).",
+                        "Default 60 = 3 seconds.")
+                .defineInRange("defaultStagingProcessIntervalTicks", 60, 10, 300);
+
+        builder.pop(); // workerCycle
+
+        // Order Processing subgroup
+        builder.comment("Order lifecycle and delivery timing").push("orderProcessing");
+
         stagingTimeoutTicks = builder
                 .comment("Timeout for staging requests before cancellation (ticks).", "Default 1200 = 60 seconds.")
                 .defineInRange("stagingTimeoutTicks", 1200, 200, 6000);
@@ -116,10 +133,6 @@ public final class ServerConfig {
         bufferWindowTicks = builder
                 .comment("Window for batching multiple requests together (ticks).", "Default 60 = 3 seconds.")
                 .defineInRange("bufferWindowTicks", 60, 10, 300);
-
-        displayUpdateIntervalTicks = builder
-                .comment("Interval for display board updates (ticks).", "Default 100 = 5 seconds.")
-                .defineInRange("displayUpdateIntervalTicks", 100, 20, 600);
 
         defaultDeliveryTicks = builder
                 .comment("Default assumed delivery time for ETA calculations (ticks).", "Default 1200 = 1 minute.")
@@ -131,46 +144,47 @@ public final class ServerConfig {
                         "Default 12000 = 10 minutes. Increase for very long-distance deliveries.")
                 .defineInRange("orderExpiryBufferTicks", 12000, 200, 72000);
 
-        defaultInvSigIntervalTicks = builder
-                .comment("Interval for inventory signature refresh checks (ticks).", "Default 40 = 2 seconds.")
-                .defineInRange("defaultInvSigIntervalTicks", 40, 10, 200);
+        builder.pop(); // orderProcessing
 
-        defaultStagingProcessIntervalTicks = builder
-                .comment("Interval for staging process when no skill manager available (ticks).",
-                        "Default 60 = 3 seconds.")
-                .defineInRange("defaultStagingProcessIntervalTicks", 60, 10, 300);
+        // Display subgroup
+        builder.comment("Display refresh timing").push("displayTiming");
 
-        builder.pop();
+        displayUpdateIntervalTicks = builder
+                .comment("Interval for display board updates (ticks).", "Default 100 = 5 seconds.")
+                .defineInRange("displayUpdateIntervalTicks", 100, 20, 600);
 
-        // Building Levels
+        builder.pop(); // displayTiming
+
+        builder.pop(); // timing
+
+        // General Settings (consolidated from buildingLevels, limits, requestSystem)
+        builder.comment("General Settings").push("general");
+
         builder.comment("Building Level Requirements").push("buildingLevels");
-
         stockTickerRequiredLevel = builder
                 .comment("Building level required for Stock Ticker functionality.",
                         "Enables access to the colony stock network.",
                         "Restock Policy functionality unlocks at the next level (this + 1).")
                 .defineInRange("stockTickerRequiredLevel", 4, 1, 4);
+        builder.pop(); // buildingLevels
 
-        builder.pop();
-
-        // Limits
         builder.comment("System Limits").push("limits");
-
         auxiliaryScanRadius = builder.comment("Radius for scanning auxiliary blocks like Stock Tickers (blocks).")
                 .defineInRange("auxiliaryScanRadius", 16, 8, 64);
+        builder.pop(); // limits
 
-        builder.pop();
-
-        // Request System
         builder.comment("Request System Settings").push("requestSystem");
-
         resolverPriority = builder.comment("Priority for SupplyLines resolvers in the MineColonies request system.",
                 "Lower values = higher priority.").defineInRange("resolverPriority", 80, 1, 200);
+        builder.pop(); // requestSystem
 
-        builder.pop();
+        builder.pop(); // general
 
         // AI/Movement
         builder.comment("AI and Movement Settings").push("ai");
+
+        // Core AI parameters
+        builder.comment("Core AI parameters").push("core");
 
         stateMachineTickRate = builder
                 .comment("Tick rate for the Stock Keeper AI state machine (game ticks).",
@@ -188,10 +202,10 @@ public final class ServerConfig {
                         "Actual game ticks = this value * stateMachineTickRate.")
                 .defineInRange("inspectDurationTicks", 4, 1, 20);
 
-        builder.pop();
+        builder.pop(); // core
 
-        // Idle Behavior
-        builder.comment("Stock Keeper idle behavior").push("idleBehavior");
+        // Idle Behavior subgroup
+        builder.comment("Stock Keeper idle behavior").push("idle");
 
         enableIdleWander = builder.comment("Stock Keeper occasionally checks on racks when not busy")
                 .define("enableIdleWander", true);
@@ -207,7 +221,9 @@ public final class ServerConfig {
 
         randomPatrol = builder.comment("Patrol locations in random order").define("randomPatrol", true);
 
-        builder.pop();
+        builder.pop(); // idle
+
+        builder.pop(); // ai
 
         // Skill Scaling
         builder.comment("Skill-Based Interval Scaling",

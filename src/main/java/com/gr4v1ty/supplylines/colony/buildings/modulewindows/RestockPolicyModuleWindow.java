@@ -7,6 +7,7 @@ import com.gr4v1ty.supplylines.network.ModNetwork;
 import com.gr4v1ty.supplylines.network.messages.AddRestockPolicyMessage;
 import com.gr4v1ty.supplylines.network.messages.RemoveRestockPolicyMessage;
 import com.ldtteam.blockui.Pane;
+import com.ldtteam.blockui.PaneBuilders;
 import com.ldtteam.blockui.controls.Button;
 import com.ldtteam.blockui.controls.ButtonImage;
 import com.ldtteam.blockui.controls.ItemIcon;
@@ -36,14 +37,20 @@ public class RestockPolicyModuleWindow extends AbstractModuleWindow<RestockPolic
     /** Resource ID for the scrolling list of policies. */
     private static final String LIST_POLICIES = "policies";
 
-    /** Resource ID for item name label. */
-    private static final String LABEL_ITEM_NAME = "itemname";
+    /** Resource ID for stock label (hut vault) with color coding. */
+    private static final String LABEL_STOCK = "stock";
 
-    /** Resource ID for target quantity label. */
-    private static final String LABEL_TARGET = "target";
+    /** Resource ID for remote stock label (sum across suppliers). */
+    private static final String LABEL_REMOTE = "remote";
 
-    /** Resource ID for current stock label. */
-    private static final String LABEL_CURRENT = "current";
+    /** Color for fully stocked (green). */
+    private static final int COLOR_STOCKED = 0x00AA00;
+
+    /** Color for can fulfill from remote (orange). */
+    private static final int COLOR_CAN_FULFILL = 0xFFAA00;
+
+    /** Color for insufficient stock (red). */
+    private static final int COLOR_INSUFFICIENT = 0xAA0000;
 
     /** Resource ID for item icon. */
     private static final String ICON_ITEM = "itemicon";
@@ -108,27 +115,50 @@ public class RestockPolicyModuleWindow extends AbstractModuleWindow<RestockPolic
             public void updateElement(final int index, final Pane rowPane) {
                 final RestockPolicyModule.PolicyEntry entry = moduleView.getPolicies().get(index);
                 final ItemStack stack = entry.getItem().getItemStack().copy();
-                stack.setCount(stack.getMaxStackSize());
+                stack.setCount(entry.getTargetQuantity());
 
-                final Text nameLabel = rowPane.findPaneOfTypeByID(LABEL_ITEM_NAME, Text.class);
-                if (nameLabel != null) {
-                    nameLabel.setText(stack.getHoverName());
+                // Stock level with color coding based on status
+                final Text stockLabel = rowPane.findPaneOfTypeByID(LABEL_STOCK, Text.class);
+                if (stockLabel != null) {
+                    long localStock = moduleView.getLocalStockLevel(entry.getItem());
+                    long remoteStock = moduleView.getRemoteStockLevel(entry.getItem());
+                    int target = entry.getTargetQuantity();
+
+                    stockLabel.setText(Component.literal(formatCompact(localStock)));
+
+                    // Color based on status
+                    if (localStock >= target) {
+                        stockLabel.setColors(COLOR_STOCKED);
+                    } else if (localStock + remoteStock >= target) {
+                        stockLabel.setColors(COLOR_CAN_FULFILL);
+                    } else {
+                        stockLabel.setColors(COLOR_INSUFFICIENT);
+                    }
+
+                    // Tooltip with description
+                    PaneBuilders.tooltipBuilder().hoverPane(stockLabel).build().setText(
+                            Component.translatable("com.supplylines.gui.stockkeeper.restockpolicy.header.stock.desc"));
                 }
 
-                final Text targetLabel = rowPane.findPaneOfTypeByID(LABEL_TARGET, Text.class);
-                if (targetLabel != null) {
-                    targetLabel.setText(Component.literal(String.valueOf(entry.getTargetQuantity())));
-                }
+                // Remote stock = sum across all suppliers
+                final Text remoteLabel = rowPane.findPaneOfTypeByID(LABEL_REMOTE, Text.class);
+                if (remoteLabel != null) {
+                    long remoteStock = moduleView.getRemoteStockLevel(entry.getItem());
+                    remoteLabel.setText(Component.literal(formatCompact(remoteStock)));
 
-                final Text currentLabel = rowPane.findPaneOfTypeByID(LABEL_CURRENT, Text.class);
-                if (currentLabel != null) {
-                    // TODO: Get actual current stock level from building
-                    currentLabel.setText(Component.literal("?"));
+                    // Tooltip with description
+                    PaneBuilders.tooltipBuilder().hoverPane(remoteLabel).build().setText(
+                            Component.translatable("com.supplylines.gui.stockkeeper.restockpolicy.header.remote.desc"));
                 }
 
                 final ItemIcon icon = rowPane.findPaneOfTypeByID(ICON_ITEM, ItemIcon.class);
                 if (icon != null) {
                     icon.setItem(stack);
+
+                    // Tooltip with item name and target quantity
+                    PaneBuilders.tooltipBuilder().hoverPane(icon).build()
+                            .setText(Component.translatable("com.supplylines.gui.stockkeeper.restockpolicy.item.desc",
+                                    entry.getItem().getItemStack().getHoverName(), entry.getTargetQuantity()));
                 }
             }
         });
@@ -165,5 +195,21 @@ public class RestockPolicyModuleWindow extends AbstractModuleWindow<RestockPolic
             moduleView.getPolicies().remove(row);
             updatePolicyList();
         }
+    }
+
+    /**
+     * Format a number in compact form (e.g., 1.2K, 35K, 1.5M).
+     *
+     * @param value
+     *            the value to format.
+     * @return the formatted string.
+     */
+    private static String formatCompact(long value) {
+        if (value >= 1_000_000) {
+            return String.format("%.1fM", value / 1_000_000.0);
+        } else if (value >= 1_000) {
+            return String.format("%.1fK", value / 1_000.0);
+        }
+        return String.valueOf(value);
     }
 }

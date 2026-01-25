@@ -1,9 +1,13 @@
 package com.gr4v1ty.supplylines.colony.buildings.modules;
 
+import com.gr4v1ty.supplylines.colony.buildings.BuildingStockKeeper;
 import com.gr4v1ty.supplylines.util.ResearchEffects;
 import com.minecolonies.api.colony.buildings.modules.AbstractBuildingModule;
 import com.minecolonies.api.colony.buildings.modules.IPersistentModule;
 import com.minecolonies.api.crafting.ItemStorage;
+import com.simibubi.create.content.logistics.BigItemStack;
+import com.simibubi.create.content.logistics.packager.InventorySummary;
+import com.simibubi.create.content.logistics.packagerLink.LogisticsManager;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -190,9 +194,39 @@ public class RestockPolicyModule extends AbstractBuildingModule implements IPers
 
     @Override
     public void serializeToView(@NotNull FriendlyByteBuf buf) {
+        // Get suppliers module for remote stock calculation
+        SuppliersModule suppliersModule = building.getModule(SuppliersModule.class);
+
         buf.writeInt(policies.size());
         for (PolicyEntry entry : policies) {
             entry.toBuf(buf);
+
+            // Local stock = Stock Keeper hut's vault inventory
+            long localStock = 0;
+            if (building instanceof BuildingStockKeeper stockKeeper) {
+                localStock = stockKeeper.getStockLevel(entry.getItem().getItemStack());
+            }
+            buf.writeLong(localStock);
+
+            // Remote stock = sum across all linked supplier networks
+            long remoteStock = 0;
+            if (suppliersModule != null) {
+                for (SuppliersModule.SupplierEntry supplier : suppliersModule.getSuppliers()) {
+                    try {
+                        InventorySummary summary = LogisticsManager.getSummaryOfNetwork(supplier.getNetworkId(), false);
+                        if (summary != null && !summary.isEmpty()) {
+                            for (BigItemStack bigStack : summary.getStacks()) {
+                                if (ItemStack.isSameItemSameTags(bigStack.stack, entry.getItem().getItemStack())) {
+                                    remoteStock += bigStack.count;
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {
+                        // Network may be unloaded or invalid
+                    }
+                }
+            }
+            buf.writeLong(remoteStock);
         }
         buf.writeBoolean(hasReachedLimit());
     }
